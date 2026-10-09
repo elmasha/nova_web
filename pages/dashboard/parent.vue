@@ -380,7 +380,9 @@
                     <div class="row-title">{{ childName(a.child_id) }}</div>
                     <div class="row-meta">Submitted {{ relativeTime(a.created_at) }}</div>
                   </div>
-                  <span class="status-pill" :class="statusClass(a.status)">{{ a.status }}</span>
+                  <span class="status-pill" :class="statusClass(a.status)">
+                    {{ requestStatusLabel(a.status) }}
+                  </span>
                 </div>
 
                 <div v-if="a.concerns" class="assess-concern">
@@ -395,6 +397,40 @@
                     ></div>
                   </div>
                   <div class="progress-label">{{ progressLabel(a.status) }}</div>
+                </div>
+
+                <!-- Assigned professional hint -->
+                <div
+                  v-if="a.status === 'assigned' && a.assigned_professional_name"
+                  class="assess-hint"
+                >
+                  <v-icon x-small color="#4a3b8c" class="mr-1">mdi-account-check-outline</v-icon>
+                  {{ a.assigned_professional_name }} will contact you soon.
+                </div>
+
+                <!-- Pick a professional (submitted, unassigned) -->
+                <div
+                  v-if="a.status === 'submitted' && !a.assigned_professional_id"
+                  class="assess-action"
+                >
+                  <button
+                    class="report-btn"
+                    @click.stop="chooseProfessional(a)"
+                  >
+                    <v-icon x-small color="white" class="mr-1">mdi-account-search-outline</v-icon>
+                    Choose a professional
+                  </button>
+                </div>
+
+                <!-- View report (completed with report ready) -->
+                <div v-if="a.report_id" class="assess-action">
+                  <button
+                    class="report-btn"
+                    @click.stop="viewReport(a.report_id)"
+                  >
+                    <v-icon x-small color="white" class="mr-1">mdi-file-document-check-outline</v-icon>
+                    View report
+                  </button>
                 </div>
               </div>
             </div>
@@ -642,6 +678,9 @@ export default {
       if (!this.children.length) {
         return 'Add your first child to start finding the right support.';
       }
+      if (this.pendingPicks > 0) {
+        return `You have ${this.pendingPicks} ${this.pendingPicks === 1 ? 'request' : 'requests'} waiting for a professional.`;
+      }
       if (this.upcomingBookings.length) {
         return `You have ${this.upcomingBookings.length} upcoming ${this.upcomingBookings.length === 1 ? 'session' : 'sessions'}.`;
       }
@@ -650,6 +689,11 @@ export default {
     openAssessments() {
       return this.assessments.filter(
         (a) => ['submitted', 'routing', 'assigned', 'in_progress'].includes(a.status)
+      ).length;
+    },
+    pendingPicks() {
+      return this.assessments.filter(
+        (a) => a.status === 'submitted' && !a.assigned_professional_id
       ).length;
     },
     upcomingBookings() {
@@ -744,6 +788,16 @@ export default {
     openChild(c) {
       if (!c || !c.id) return;
       this.$router.push(`/child/${c.id}`).catch(() => {});
+    },
+
+    chooseProfessional(a) {
+      if (!a || !a.id) return;
+      this.$router.push(`/assessments/${a.id}/match`).catch(() => {});
+    },
+
+    viewReport(reportId) {
+      if (!reportId) return;
+      this.$router.push(`/reports/${reportId}`).catch(() => {});
     },
 
     async loadAll() {
@@ -916,6 +970,18 @@ export default {
       if (['pending', 'submitted', 'routing', 'in_progress'].includes(s)) return 'status-amber';
       if (['rejected', 'cancelled', 'no_show', 'suspended'].includes(s)) return 'status-red';
       return 'status-grey';
+    },
+
+    requestStatusLabel(status) {
+      const s = String(status || '').toLowerCase();
+      return {
+        submitted:   'Submitted',
+        routing:     'Routing',
+        assigned:    'Assigned',
+        in_progress: 'In progress',
+        completed:   'Report ready',
+        cancelled:   'Cancelled'
+      }[s] || s;
     },
 
     formatDateTime(ts) {
@@ -1282,7 +1348,6 @@ export default {
 .list-row:hover { border-color: #d9d2ec; transform: translateY(-1px); box-shadow: 0 16px 28px -20px rgba(74, 59, 140, 0.35); }
 .list-row:active { transform: translateY(0) scale(0.995); }
 
-/* Clickable rows get an accent border-left on hover */
 .list-row.clickable,
 .child-row.clickable { position: relative; }
 .list-row.clickable::before,
@@ -1452,6 +1517,33 @@ export default {
 .progress-label {
   font-size: 0.72rem; color: var(--muted); margin-top: 6px; font-weight: 600;
 }
+
+.assess-hint {
+  display: flex; align-items: center;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #f0f0f5;
+  font-size: 0.78rem; font-weight: 600;
+  color: var(--purple);
+}
+
+.assess-action {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #f0f0f5;
+}
+
+.report-btn {
+  display: inline-flex; align-items: center;
+  padding: 9px 14px; border-radius: 10px; border: none;
+  background: linear-gradient(135deg, #4a3b8c, #5b4b9e);
+  color: #fff; font-size: 0.8rem; font-weight: 700;
+  cursor: pointer; font-family: inherit;
+  box-shadow: 0 8px 18px -10px rgba(74, 59, 140, 0.6);
+  transition: transform 0.15s ease;
+}
+.report-btn:hover { transform: translateY(-1px); }
+.report-btn:active { transform: translateY(0) scale(0.99); }
 
 /* PROFILE */
 .profile-header {

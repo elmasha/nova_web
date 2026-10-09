@@ -396,6 +396,12 @@
                   "{{ truncate(r.concerns, 120) }}"
                 </div>
 
+                <!-- Parent preference warning -->
+                <div v-if="isPreferredDifferent(r)" class="request-pref-warning">
+                  <v-icon x-small color="#b7791f" class="mr-1">mdi-information-outline</v-icon>
+                  Parent chose <strong>{{ r.preferred_professional_name }}</strong>
+                </div>
+
                 <div class="request-meta">
                   <span v-if="r.parent_name" class="meta-item">
                     <v-icon x-small color="#7f8c8d" class="mr-1">mdi-account-outline</v-icon>
@@ -817,6 +823,21 @@
                 {{ requestStatusLabel(selectedRequest.status) }}
               </span>
               <span class="request-id">#{{ selectedRequest.id }}</span>
+            </div>
+
+            <!-- PARENT PREFERENCE NOTE -->
+            <div
+              v-if="selectedRequest.preferred_professional_name
+                     && selectedRequest.preferred_professional_id !== selectedRequest.assigned_professional_id"
+              class="req-section req-section-note"
+            >
+              <div class="req-label">Parent's preference</div>
+              <div class="req-value">
+                {{ selectedRequest.preferred_professional_name }}
+                <div class="req-sub">
+                  The parent originally chose this professional. Our team assigned you instead.
+                </div>
+              </div>
             </div>
 
             <div v-if="selectedRequest.parent_name" class="req-section">
@@ -2342,6 +2363,12 @@ export default {
       if (min && max) return `KSh ${fmt(min)}–${fmt(max)}`;
       if (min) return `From KSh ${fmt(min)}`;
       return `Up to KSh ${fmt(max)}`;
+    },
+    isPreferredDifferent(r) {
+      if (!r) return false;
+      if (!r.preferred_professional_id) return false;
+      if (!r.assigned_professional_id) return false;
+      return r.preferred_professional_id !== r.assigned_professional_id;
     }
   }
 };
@@ -2901,6 +2928,25 @@ export default {
   margin-bottom: 10px;
 }
 
+/* Parent preference warning on card */
+.request-pref-warning {
+  display: flex; align-items: center;
+  padding: 8px 12px;
+  margin-bottom: 10px;
+  border-radius: 8px;
+  background: #fef3e0;
+  border-left: 3px solid #b7791f;
+  font-size: 0.78rem;
+  color: #8a5a12;
+  font-weight: 600;
+  line-height: 1.4;
+}
+.request-pref-warning strong {
+  font-weight: 800;
+  color: #6b4410;
+  margin-left: 3px;
+}
+
 .request-meta {
   display: flex; flex-wrap: wrap; gap: 10px;
   font-size: 0.72rem; color: var(--muted);
@@ -3282,6 +3328,20 @@ select.text-input {
   border: 1px solid #d9efe1;
   margin-top: 10px;
 }
+
+/* Parent preference highlighted block in modal */
+.req-section-note {
+  background: #fef3e0;
+  border-radius: 12px;
+  padding: 14px;
+  border: 1px solid #f8d7a1;
+  margin-top: 10px;
+  margin-bottom: 10px;
+}
+.req-section-note .req-label { color: #b7791f; }
+.req-section-note .req-value { color: #6b4410; }
+.req-section-note .req-sub { color: #8a5a12; }
+
 .schedule-row { display: flex; flex-direction: column; gap: 8px; }
 
 /* QUESTIONNAIRE ROWS */
