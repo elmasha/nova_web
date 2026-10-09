@@ -1482,7 +1482,7 @@ export default {
 .toast-enter-active, .toast-leave-active { transition: all 0.25s cubic-bezier(0.2, 0.8, 0.2, 1); }
 .toast-enter, .toast-leave-to { opacity: 0; transform: translateX(20px); }
 
-/* RESPONSIVE */
+/* RESPONSIVE  */
 @media (max-width: 599px) {
   .main { padding: 16px 12px; }
   .card { padding: 16px; }
