@@ -1,260 +1,494 @@
 <template>
   <div class="child-page">
-    <!-- TOP BAR -->
-    <header class="topbar">
+    <!-- TOPBAR -->
+    <header class="topbar" :class="{ scrolled }">
       <button class="back-btn" @click="goBack" aria-label="Back">
         <v-icon small color="#4a3b8c">mdi-arrow-left</v-icon>
       </button>
       <div class="topbar-title">Child profile</div>
       <button class="icon-btn" @click="load" :disabled="loading" aria-label="Refresh">
-        <v-icon small color="#4a3b8c">mdi-refresh</v-icon>
+        <v-icon small color="#4a3b8c" :class="{ spinning: loading }">mdi-refresh</v-icon>
       </button>
     </header>
 
+    <!-- TABS -->
+    <nav v-if="child && !loading && !loadError" class="tabs">
+      <button
+        v-for="t in tabs"
+        :key="t.value"
+        class="tab"
+        :class="{ active: activeTab === t.value }"
+        @click="setTab(t.value)"
+      >
+        <v-icon x-small :color="activeTab === t.value ? 'white' : '#7f8c8d'" class="mr-1">
+          {{ t.icon }}
+        </v-icon>
+        <span>{{ t.label }}</span>
+        <span v-if="t.value === 'bookings' && upcomingBookings.length" class="tab-badge">
+          {{ upcomingBookings.length }}
+        </span>
+        <span v-else-if="t.value === 'assessments' && openRequests.length" class="tab-badge">
+          {{ openRequests.length }}
+        </span>
+      </button>
+    </nav>
+
     <main class="main">
-      <!-- LOADING -->
-      <div v-if="loading" class="loading">
-        <v-progress-circular indeterminate color="#4a3b8c" size="28" width="3" />
+      <!-- SKELETON -->
+      <div v-if="loading" class="skeleton-wrap">
+        <div class="sk-hero"></div>
+        <div class="sk-strip">
+          <div v-for="n in 3" :key="n" class="sk-chip"></div>
+        </div>
+        <div class="sk-card"></div>
+        <div class="sk-card"></div>
       </div>
 
       <!-- ERROR -->
       <section v-else-if="loadError" class="error-card">
         <div class="error-icon">
-          <v-icon size="42" color="#e74c3c">mdi-alert-circle-outline</v-icon>
+          <v-icon size="38" color="#e74c3c">mdi-alert-circle-outline</v-icon>
         </div>
         <h2>Could not load child</h2>
         <p>{{ loadError }}</p>
-        <button class="primary-btn" @click="load">Try again</button>
+        <button class="primary-btn" @click="load">
+          <v-icon small color="white" class="mr-2">mdi-refresh</v-icon>
+          Try again
+        </button>
         <button class="link-btn mt-3" @click="goBack">Back to dashboard</button>
       </section>
 
       <template v-else-if="child">
-        <!-- IDENTITY CARD -->
-        <section class="identity-card">
-          <div class="avatar-lg" :style="{ background: avatarBg }">
-            {{ initials }}
-          </div>
-          <div class="identity-body">
-            <div class="identity-name">{{ child.full_name }}</div>
-            <div class="identity-meta">
-              {{ age(child.dob) }}
-              <span v-if="child.gender"> · {{ genderLabel(child.gender) }}</span>
-              <span v-if="child.county"> · {{ child.county }}</span>
-            </div>
-            <div class="identity-tags">
-              <span v-if="child.school_name" class="tag tag-blue">
-                <v-icon x-small color="#56c2d9" class="mr-1">mdi-school</v-icon>
-                {{ child.school_name }}
-              </span>
-              <span v-if="child.diagnosis_optional" class="tag tag-pink">
-                {{ child.diagnosis_optional }}
-              </span>
-            </div>
-          </div>
-        </section>
-
-        <!-- QUICK ACTIONS -->
-        <section class="quick-actions">
-          <button class="quick-action" @click="startAssessment">
-            <div class="qa-icon" style="background:#e6e0f5">
-              <v-icon small color="#4a3b8c">mdi-clipboard-text-outline</v-icon>
-            </div>
-            <span>Start assessment</span>
-          </button>
-          <button class="quick-action" @click="goTo('/professionals')">
-            <div class="qa-icon" style="background:#d9f0f6">
-              <v-icon small color="#56c2d9">mdi-account-search-outline</v-icon>
-            </div>
-            <span>Find professional</span>
-          </button>
-          <button class="quick-action" @click="goTo('/dashboard/parent?tab=bookings')">
-            <div class="qa-icon" style="background:#fce4ec">
-              <v-icon small color="#e86a8a">mdi-calendar-month-outline</v-icon>
-            </div>
-            <span>Bookings</span>
-          </button>
-        </section>
-
-        <!-- NOTES -->
-        <section v-if="child.notes" class="card">
-          <h2 class="card-title">Notes</h2>
-          <p class="note-text">{{ child.notes }}</p>
-        </section>
-
-        <!-- ASSESSMENT REQUESTS -->
-        <section class="card" v-if="requests.length">
-          <h2 class="card-title">Assessment requests</h2>
-          <div class="requests-list">
-            <div v-for="r in requests" :key="r.id" class="request-row">
-              <div class="request-icon">
-                <v-icon small color="#4a3b8c">mdi-file-document-outline</v-icon>
+        <transition name="fade-slide" mode="out-in">
+          <template>
+            <!-- ============================================================
+                 OVERVIEW
+                 ============================================================ -->
+            <section v-if="activeTab === 'overview'" key="overview">
+              <!-- HERO -->
+              <div class="hero">
+                <div class="hero-body">
+                  <div class="hero-avatar" :style="{ background: avatarBg }">
+                    {{ initials }}
+                  </div>
+                  <div class="hero-info">
+                    <div class="hero-kicker">Child profile</div>
+                    <h1 class="hero-title">{{ child.full_name }}</h1>
+                    <div class="hero-meta">
+                      <span class="hero-chip">{{ age(child.dob) }}</span>
+                      <span v-if="child.gender" class="hero-chip">{{ genderLabel(child.gender) }}</span>
+                      <span v-if="child.county" class="hero-chip">{{ child.county }}</span>
+                    </div>
+                  </div>
+                  <button class="hero-copy" @click="copyChildId" :aria-label="'Copy child ID'">
+                    <v-icon x-small color="white">mdi-content-copy</v-icon>
+                  </button>
+                </div>
+                <div class="hero-glow"></div>
               </div>
-              <div class="request-body">
-                <div class="request-title">Assessment request</div>
-                <div class="request-sub">Submitted {{ relativeTime(r.created_at) }}</div>
-              </div>
-              <span class="status-pill" :class="statusClass(r.status)">{{ statusLabel(r.status) }}</span>
-            </div>
-          </div>
-        </section>
 
-        <!-- UPCOMING BOOKINGS -->
-        <section class="card">
-          <h2 class="card-title">Upcoming sessions</h2>
-          <div v-if="!upcomingBookings.length" class="mini-empty">
-            <v-icon small color="#95a5a6" class="mr-2">mdi-calendar-blank-outline</v-icon>
-            <span>No upcoming sessions yet.</span>
-          </div>
-          <div v-else class="bookings-list">
-            <div
-              v-for="b in upcomingBookings"
-              :key="b.id"
-              class="booking-row"
-              @click="goTo(`/bookings/${b.id}`)"
-            >
-              <div class="booking-date">
-                <div class="booking-day">{{ dayOf(b.scheduled_at) }}</div>
-                <div class="booking-month">{{ monthOf(b.scheduled_at) }}</div>
-              </div>
-              <div class="booking-info">
-                <div class="booking-title">{{ b.professional_name || 'Professional' }}</div>
-                <div class="booking-sub">
-                  {{ b.professional_type || 'Session' }} · {{ timeOf(b.scheduled_at) }}
+              <!-- STAT STRIP -->
+              <div class="stat-strip">
+                <div class="stat-chip" @click="setTab('bookings')">
+                  <div class="stat-icon gradient-purple">
+                    <v-icon small color="white">mdi-calendar-check-outline</v-icon>
+                  </div>
+                  <div class="stat-body">
+                    <div class="stat-value">{{ upcomingBookings.length }}</div>
+                    <div class="stat-label">Upcoming</div>
+                  </div>
+                </div>
+
+                <div class="stat-chip" @click="setTab('assessments')">
+                  <div class="stat-icon gradient-pink">
+                    <v-icon small color="white">mdi-file-document-outline</v-icon>
+                  </div>
+                  <div class="stat-body">
+                    <div class="stat-value">{{ openRequests.length }}</div>
+                    <div class="stat-label">Open requests</div>
+                  </div>
+                </div>
+
+                <div class="stat-chip" @click="setTab('edit')">
+                  <div class="stat-icon gradient-teal">
+                    <v-icon small color="white">mdi-pencil-outline</v-icon>
+                  </div>
+                  <div class="stat-body">
+                    <div class="stat-value">{{ updatedLabel }}</div>
+                    <div class="stat-label">Last updated</div>
+                  </div>
                 </div>
               </div>
-              <span class="status-pill" :class="statusClass(b.status)">{{ statusLabel(b.status) }}</span>
-            </div>
-          </div>
-        </section>
 
-        <!-- EDIT -->
-        <section class="card">
-          <h2 class="card-title">Edit details</h2>
+              <!-- QUICK ACTIONS -->
+              <div class="section-head">
+                <h2>Quick actions</h2>
+              </div>
+              <div class="quick-actions">
+                <button class="qa-card" @click="startAssessment">
+                  <div class="qa-icon gradient-purple">
+                    <v-icon small color="white">mdi-clipboard-text-outline</v-icon>
+                  </div>
+                  <div class="qa-text">
+                    <div class="qa-title">Start assessment</div>
+                    <div class="qa-sub">Route to a specialist</div>
+                  </div>
+                  <v-icon small color="#c8c0e0" class="qa-arrow">mdi-chevron-right</v-icon>
+                </button>
 
-          <label class="field-label">Full name</label>
-          <input
-            v-model.trim="form.full_name"
-            type="text"
-            class="text-input"
-            :disabled="saving"
-          />
+                <button class="qa-card" @click="goTo('/professionals')">
+                  <div class="qa-icon gradient-teal">
+                    <v-icon small color="white">mdi-account-search-outline</v-icon>
+                  </div>
+                  <div class="qa-text">
+                    <div class="qa-title">Find professional</div>
+                    <div class="qa-sub">Browse verified experts</div>
+                  </div>
+                  <v-icon small color="#c8c0e0" class="qa-arrow">mdi-chevron-right</v-icon>
+                </button>
 
-          <label class="field-label mt-4">Date of birth</label>
-          <input
-            v-model="form.dob"
-            type="date"
-            class="text-input"
-            :disabled="saving"
-            :max="todayISO"
-          />
+                <button class="qa-card" @click="setTab('bookings')">
+                  <div class="qa-icon gradient-pink">
+                    <v-icon small color="white">mdi-calendar-month-outline</v-icon>
+                  </div>
+                  <div class="qa-text">
+                    <div class="qa-title">View sessions</div>
+                    <div class="qa-sub">Upcoming and past</div>
+                  </div>
+                  <v-icon small color="#c8c0e0" class="qa-arrow">mdi-chevron-right</v-icon>
+                </button>
+              </div>
 
-          <label class="field-label mt-4">Gender</label>
-          <div class="chip-row">
-            <button
-              v-for="g in genders"
-              :key="g.value"
-              type="button"
-              class="chip"
-              :class="{ active: form.gender === g.value }"
-              :disabled="saving"
-              @click="form.gender = g.value"
-            >
-              {{ g.label }}
-            </button>
-          </div>
+              <!-- NOTES -->
+              <div v-if="child.notes" class="section-head mt-6">
+                <h2>Notes</h2>
+                <button class="link-btn" @click="setTab('edit')">Edit</button>
+              </div>
+              <div v-if="child.notes" class="card">
+                <p class="note-text">{{ child.notes }}</p>
+              </div>
 
-          <label class="field-label mt-4">County</label>
-          <select v-model="form.county" class="text-input" :disabled="saving">
-            <option value="">Select a county</option>
-            <option v-for="c in counties" :key="c" :value="c">{{ c }}</option>
-          </select>
+              <!-- UPCOMING -->
+              <div class="section-head mt-6">
+                <h2>Upcoming sessions</h2>
+                <button v-if="upcomingBookings.length" class="link-btn" @click="setTab('bookings')">
+                  View all
+                </button>
+              </div>
 
-          <label class="field-label mt-4">Area (optional)</label>
-          <input
-            v-model.trim="form.area"
-            type="text"
-            class="text-input"
-            :disabled="saving"
-          />
+              <div v-if="!upcomingBookings.length" class="empty-state">
+                <div class="empty-illustration">
+                  <v-icon size="30" color="#4a3b8c">mdi-calendar-blank-outline</v-icon>
+                </div>
+                <div class="empty-title">No upcoming sessions</div>
+                <div class="empty-sub">Book a professional to schedule the first session.</div>
+                <button class="primary-btn small mt-3" @click="goTo('/professionals')">
+                  Find a professional
+                </button>
+              </div>
 
-          <label class="field-label mt-4">School (optional)</label>
-          <input
-            v-model.trim="form.school_name"
-            type="text"
-            class="text-input"
-            :disabled="saving"
-          />
+              <div v-else class="list">
+                <div
+                  v-for="b in upcomingBookings.slice(0, 3)"
+                  :key="b.id"
+                  class="list-row clickable"
+                  @click="goTo(`/bookings/${b.id}`)"
+                >
+                  <div class="date-block">
+                    <div class="db-dow">{{ dowOf(b.scheduled_at) }}</div>
+                    <div class="db-day">{{ dayOf(b.scheduled_at) }}</div>
+                    <div class="db-mon">{{ monthOf(b.scheduled_at) }}</div>
+                  </div>
+                  <div class="row-body">
+                    <div class="row-title">{{ b.professional_name || 'Professional' }}</div>
+                    <div class="row-sub">{{ b.professional_type || 'Session' }}</div>
+                    <div class="row-meta">
+                      <v-icon x-small color="#95a5a6">mdi-clock-outline</v-icon>
+                      {{ timeOf(b.scheduled_at) }}
+                    </div>
+                  </div>
+                  <div class="row-tail">
+                    <span class="status-pill" :class="statusClass(b.status)">{{ statusLabel(b.status) }}</span>
+                    <v-icon small color="#c8c0e0" class="chev">mdi-chevron-right</v-icon>
+                  </div>
+                </div>
+              </div>
+            </section>
 
-          <label class="field-label mt-4">Existing diagnosis (optional)</label>
-          <input
-            v-model.trim="form.diagnosis_optional"
-            type="text"
-            placeholder="e.g. Autism, Down syndrome"
-            class="text-input"
-            :disabled="saving"
-          />
+            <!-- ============================================================
+                 BOOKINGS
+                 ============================================================ -->
+            <section v-else-if="activeTab === 'bookings'" key="bookings">
+              <div class="greeting">
+                <h1>Sessions</h1>
+                <p>Every booked session for {{ child.full_name }}.</p>
+              </div>
 
-          <label class="field-label mt-4">Notes (optional)</label>
-          <textarea
-            v-model.trim="form.notes"
-            rows="4"
-            class="text-input textarea"
-            :disabled="saving"
-          ></textarea>
+              <div class="sub-tabs">
+                <button
+                  v-for="f in bookingFilters"
+                  :key="f.value"
+                  class="sub-tab"
+                  :class="{ active: bookingFilter === f.value }"
+                  @click="bookingFilter = f.value"
+                >
+                  {{ f.label }}
+                </button>
+              </div>
 
-          <div v-if="saveError" class="error-box">
-            <v-icon small color="#e74c3c" class="mr-1">mdi-alert-circle-outline</v-icon>
-            <span>{{ saveError }}</span>
-          </div>
+              <div v-if="!filteredBookings.length" class="empty-state">
+                <div class="empty-illustration">
+                  <v-icon size="30" color="#4a3b8c">mdi-calendar-blank-outline</v-icon>
+                </div>
+                <div class="empty-title">No {{ bookingFilter }} sessions</div>
+                <div class="empty-sub">Sessions you book for this child appear here.</div>
+              </div>
 
-          <div v-if="saveSuccess" class="success-box">
-            <v-icon small color="#229954" class="mr-1">mdi-check-circle-outline</v-icon>
-            <span>{{ saveSuccess }}</span>
-          </div>
+              <div v-else class="list">
+                <div
+                  v-for="b in filteredBookings"
+                  :key="b.id"
+                  class="list-row clickable"
+                  @click="goTo(`/bookings/${b.id}`)"
+                >
+                  <div class="date-block">
+                    <div class="db-dow">{{ dowOf(b.scheduled_at) }}</div>
+                    <div class="db-day">{{ dayOf(b.scheduled_at) }}</div>
+                    <div class="db-mon">{{ monthOf(b.scheduled_at) }}</div>
+                  </div>
+                  <div class="row-body">
+                    <div class="row-title">{{ b.professional_name || 'Professional' }}</div>
+                    <div class="row-sub">{{ b.professional_type || 'Session' }}</div>
+                    <div class="row-meta">
+                      <v-icon x-small color="#95a5a6">mdi-clock-outline</v-icon>
+                      {{ timeOf(b.scheduled_at) }}
+                    </div>
+                  </div>
+                  <div class="row-tail">
+                    <span class="status-pill" :class="statusClass(b.status)">{{ statusLabel(b.status) }}</span>
+                    <v-icon small color="#c8c0e0" class="chev">mdi-chevron-right</v-icon>
+                  </div>
+                </div>
+              </div>
+            </section>
 
-          <button class="primary-btn mt-4" :disabled="!canSave || saving" @click="save">
-            <span v-if="!saving">
-              Save changes
-              <v-icon small color="white" class="ml-2">mdi-check</v-icon>
-            </span>
-            <span v-else class="loading-row">
-              <v-progress-circular indeterminate size="18" width="2" color="white" />
-              <span class="ml-2">Saving…</span>
-            </span>
-          </button>
-        </section>
+            <!-- ============================================================
+                 ASSESSMENTS
+                 ============================================================ -->
+            <section v-else-if="activeTab === 'assessments'" key="assessments">
+              <div class="greeting-row">
+                <div>
+                  <h1>Assessments</h1>
+                  <p>Assessment requests and reports.</p>
+                </div>
+                <button class="primary-btn" @click="startAssessment">
+                  <v-icon small color="white" class="mr-2">mdi-plus</v-icon>
+                  New request
+                </button>
+              </div>
 
-        <!-- DANGER -->
-        <section class="card danger-card">
-          <h2 class="card-title danger-title">Danger zone</h2>
-          <button class="row-btn danger-row" @click="confirmArchive">
-            <div class="row-icon" style="background: #fdecea">
-              <v-icon small color="#e74c3c">mdi-archive-outline</v-icon>
-            </div>
-            <div class="row-body">
-              <div class="row-title">Archive this child</div>
-              <div class="row-sub">Hides from dashboard. Data is kept.</div>
-            </div>
-            <v-icon small color="#95a5a6">mdi-chevron-right</v-icon>
-          </button>
-        </section>
+              <div v-if="!requests.length" class="empty-state">
+                <div class="empty-illustration">
+                  <v-icon size="30" color="#4a3b8c">mdi-file-document-outline</v-icon>
+                </div>
+                <div class="empty-title">No assessment requests</div>
+                <div class="empty-sub">Start one to route {{ child.full_name }} to a specialist.</div>
+                <button class="primary-btn small mt-3" @click="startAssessment">
+                  Start assessment
+                </button>
+              </div>
+
+              <div v-else class="list">
+                <div v-for="r in requests" :key="r.id" class="assessment-row">
+                  <div class="assess-head">
+                    <div class="assess-icon gradient-purple">
+                      <v-icon small color="white">mdi-file-document-outline</v-icon>
+                    </div>
+                    <div class="assess-body">
+                      <div class="row-title">Assessment request</div>
+                      <div class="row-meta">Submitted {{ relativeTime(r.created_at) }}</div>
+                    </div>
+                    <span class="status-pill" :class="statusClass(r.status)">{{ statusLabel(r.status) }}</span>
+                  </div>
+
+                  <div v-if="r.concerns" class="assess-concern">
+                    "{{ r.concerns }}"
+                  </div>
+
+                  <div class="assess-progress">
+                    <div class="progress-track">
+                      <div
+                        class="progress-fill"
+                        :style="{ width: progressPercent(r.status) + '%' }"
+                      ></div>
+                    </div>
+                    <div class="progress-label">{{ progressLabel(r.status) }}</div>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <!-- ============================================================
+                 EDIT
+                 ============================================================ -->
+            <section v-else-if="activeTab === 'edit'" key="edit">
+              <div class="greeting">
+                <h1>Edit details</h1>
+                <p>Keep {{ child.full_name }}'s profile up to date.</p>
+              </div>
+
+              <div class="card">
+                <label class="field-label">Full name</label>
+                <input
+                  v-model.trim="form.full_name"
+                  type="text"
+                  class="text-input"
+                  :disabled="saving"
+                />
+
+                <label class="field-label mt-4">Date of birth</label>
+                <input
+                  v-model="form.dob"
+                  type="date"
+                  class="text-input"
+                  :disabled="saving"
+                  :max="todayISO"
+                />
+
+                <label class="field-label mt-4">Gender</label>
+                <div class="chip-row">
+                  <button
+                    v-for="g in genders"
+                    :key="g.value"
+                    type="button"
+                    class="chip"
+                    :class="{ active: form.gender === g.value }"
+                    :disabled="saving"
+                    @click="form.gender = g.value"
+                  >
+                    {{ g.label }}
+                  </button>
+                </div>
+
+                <label class="field-label mt-4">County</label>
+                <select v-model="form.county" class="text-input" :disabled="saving">
+                  <option value="">Select a county</option>
+                  <option v-for="c in counties" :key="c" :value="c">{{ c }}</option>
+                </select>
+
+                <label class="field-label mt-4">Area (optional)</label>
+                <input
+                  v-model.trim="form.area"
+                  type="text"
+                  class="text-input"
+                  :disabled="saving"
+                />
+
+                <label class="field-label mt-4">School (optional)</label>
+                <input
+                  v-model.trim="form.school_name"
+                  type="text"
+                  class="text-input"
+                  :disabled="saving"
+                />
+
+                <label class="field-label mt-4">Existing diagnosis (optional)</label>
+                <input
+                  v-model.trim="form.diagnosis_optional"
+                  type="text"
+                  placeholder="e.g. Autism, Down syndrome"
+                  class="text-input"
+                  :disabled="saving"
+                />
+
+                <label class="field-label mt-4">
+                  Notes (optional)
+                  <span class="field-hint">{{ form.notes.length }}/2000</span>
+                </label>
+                <textarea
+                  v-model.trim="form.notes"
+                  rows="4"
+                  maxlength="2000"
+                  class="text-input textarea"
+                  :disabled="saving"
+                ></textarea>
+
+                <div v-if="saveError" class="error-box">
+                  <v-icon small color="#e74c3c" class="mr-2">mdi-alert-circle-outline</v-icon>
+                  <span>{{ saveError }}</span>
+                </div>
+
+                <button
+                  class="primary-btn mt-4"
+                  :disabled="!canSave || saving"
+                  @click="save"
+                >
+                  <span v-if="!saving">
+                    Save changes
+                    <v-icon small color="white" class="ml-2">mdi-check</v-icon>
+                  </span>
+                  <span v-else class="loading-row">
+                    <v-progress-circular indeterminate size="18" width="2" color="white" />
+                    <span class="ml-2">Saving…</span>
+                  </span>
+                </button>
+              </div>
+
+              <!-- DANGER -->
+              <div class="card danger-card">
+                <h2 class="card-title danger-title">Danger zone</h2>
+                <button class="row-btn danger-row" @click="confirmArchive">
+                  <div class="row-icon" style="background: #fdecea">
+                    <v-icon small color="#e74c3c">mdi-archive-outline</v-icon>
+                  </div>
+                  <div class="row-body">
+                    <div class="row-title">Archive this child</div>
+                    <div class="row-sub">Hides from dashboard. Data is kept.</div>
+                  </div>
+                  <v-icon small color="#95a5a6">mdi-chevron-right</v-icon>
+                </button>
+              </div>
+            </section>
+          </template>
+        </transition>
       </template>
     </main>
 
     <!-- ARCHIVE CONFIRM -->
-    <div v-if="showArchiveConfirm" class="modal-backdrop" @click.self="showArchiveConfirm = false">
-      <div class="modal">
-        <h3 class="modal-title">Archive {{ child?.full_name }}?</h3>
-        <p class="modal-text">
-          The child will be hidden from your dashboard. You can restore later by contacting support.
-        </p>
-        <div class="modal-actions">
-          <button class="btn-secondary" @click="showArchiveConfirm = false">Cancel</button>
-          <button class="btn-danger" :disabled="saving" @click="archiveChild">
-            Archive
-          </button>
+    <transition name="modal">
+      <div v-if="showArchiveConfirm" class="modal-backdrop" @click.self="showArchiveConfirm = false">
+        <div class="modal modal-sm">
+          <div class="confirm-icon danger">
+            <v-icon size="34" color="#e74c3c">mdi-archive-outline</v-icon>
+          </div>
+          <h3 class="confirm-title">Archive {{ child?.full_name }}?</h3>
+          <p class="confirm-text">
+            The child will be hidden from your dashboard. You can restore later by contacting support.
+          </p>
+          <div class="modal-footer">
+            <button class="btn-secondary" @click="showArchiveConfirm = false">Cancel</button>
+            <button class="btn-danger" :disabled="saving" @click="archiveChild">
+              {{ saving ? 'Archiving…' : 'Archive' }}
+            </button>
+          </div>
         </div>
       </div>
+    </transition>
+
+    <!-- TOASTS -->
+    <div class="toast-wrap">
+      <transition-group name="toast">
+        <div
+          v-for="t in toasts"
+          :key="t.id"
+          class="toast"
+          :class="`toast-${t.type}`"
+        >
+          <v-icon small color="white" class="mr-2">{{ t.icon }}</v-icon>
+          <span class="toast-text">{{ t.message }}</span>
+          <span class="toast-bar" />
+        </div>
+      </transition-group>
     </div>
   </div>
 </template>
@@ -263,6 +497,8 @@
 import axios from 'axios';
 
 const API = process.env.API_BASE_URL || 'https://novaserver-production-b5fd.up.railway.app';
+
+const ROLE_TABS = ['overview', 'bookings', 'assessments', 'edit'];
 
 export default {
   name: 'ChildDetailPage',
@@ -274,11 +510,26 @@ export default {
       saving: false,
       loadError: '',
       saveError: '',
-      saveSuccess: '',
+      scrolled: false,
 
       child: null,
       bookings: [],
       requests: [],
+
+      activeTab: 'overview',
+      tabs: [
+        { value: 'overview',    label: 'Overview',    icon: 'mdi-view-dashboard-outline' },
+        { value: 'bookings',    label: 'Sessions',    icon: 'mdi-calendar-check-outline' },
+        { value: 'assessments', label: 'Assessments', icon: 'mdi-file-document-outline' },
+        { value: 'edit',        label: 'Edit',        icon: 'mdi-pencil-outline' }
+      ],
+
+      bookingFilter: 'upcoming',
+      bookingFilters: [
+        { value: 'upcoming', label: 'Upcoming' },
+        { value: 'past',     label: 'Past' },
+        { value: 'all',      label: 'All' }
+      ],
 
       form: {
         full_name: '',
@@ -299,6 +550,7 @@ export default {
       ],
 
       showArchiveConfirm: false,
+      toasts: [],
 
       counties: [
         'Nairobi', 'Mombasa', 'Kisumu', 'Nakuru', 'Kiambu',
@@ -330,24 +582,90 @@ export default {
       return this.bookings
         .filter((b) => {
           const t = new Date(b.scheduled_at).getTime();
-          return t >= now && (b.status === 'pending' || b.status === 'confirmed');
+          return t >= now && ['pending', 'confirmed'].includes(b.status);
         })
-        .sort((a, b) => new Date(a.scheduled_at) - new Date(b.scheduled_at))
-        .slice(0, 5);
+        .sort((a, b) => new Date(a.scheduled_at) - new Date(b.scheduled_at));
+    },
+    filteredBookings() {
+      const now = Date.now();
+      if (this.bookingFilter === 'upcoming') {
+        return this.bookings
+          .filter((b) => {
+            const t = new Date(b.scheduled_at).getTime();
+            return t >= now && ['pending', 'confirmed'].includes(b.status);
+          })
+          .sort((a, b) => new Date(a.scheduled_at) - new Date(b.scheduled_at));
+      }
+      if (this.bookingFilter === 'past') {
+        return this.bookings
+          .filter((b) => {
+            const t = new Date(b.scheduled_at).getTime();
+            return t < now || ['completed', 'cancelled', 'no_show'].includes(b.status);
+          })
+          .sort((a, b) => new Date(b.scheduled_at) - new Date(a.scheduled_at));
+      }
+      return this.bookings.slice().sort(
+        (a, b) => new Date(b.scheduled_at) - new Date(a.scheduled_at)
+      );
+    },
+    openRequests() {
+      return this.requests.filter(
+        (r) => ['submitted', 'routing', 'assigned', 'in_progress'].includes(r.status)
+      );
+    },
+    updatedLabel() {
+      if (!this.child?.updated_at) return '—';
+      const diff = Date.now() - new Date(this.child.updated_at).getTime();
+      const days = Math.floor(diff / 86400000);
+      if (days < 1) return 'today';
+      if (days === 1) return '1d';
+      if (days < 30) return `${days}d`;
+      const months = Math.floor(days / 30);
+      return `${months}mo`;
     },
     canSave() {
       if (!this.child) return false;
       const fields = ['full_name', 'dob', 'gender', 'county', 'area', 'school_name', 'notes', 'diagnosis_optional'];
-      return fields.some((f) => (this.form[f] || '') !== (this.child[f] || ''))
-        && this.form.full_name.trim().length >= 2;
+      const changed = fields.some((f) => (this.form[f] || '') !== (this.child[f] || ''));
+      return changed && this.form.full_name.trim().length >= 2;
     }
   },
 
   mounted() {
+    window.addEventListener('scroll', this.onScroll, { passive: true });
+
+    const qTab = this.$route.query.tab;
+    if (ROLE_TABS.includes(qTab)) this.activeTab = qTab;
+
+    // Warn on leaving with unsaved edit changes
+    window.addEventListener('beforeunload', this.onBeforeUnload);
+
     this.load();
   },
 
+  beforeDestroy() {
+    window.removeEventListener('scroll', this.onScroll);
+    window.removeEventListener('beforeunload', this.onBeforeUnload);
+  },
+
   methods: {
+    onScroll() { this.scrolled = window.scrollY > 4; },
+
+    onBeforeUnload(e) {
+      if (this.canSave) {
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    },
+
+    toast(message, type = 'success', icon = 'mdi-check-circle-outline') {
+      const id = Date.now() + Math.random();
+      this.toasts.push({ id, message, type, icon });
+      setTimeout(() => {
+        this.toasts = this.toasts.filter((t) => t.id !== id);
+      }, 3200);
+    },
+
     _fbAuth() {
       if (this.$fire?.auth) return this.$fire.auth;
       if (this.$firebase) {
@@ -375,6 +693,22 @@ export default {
       this.$router.push(path).catch(() => {});
     },
 
+    setTab(tab) {
+      if (!ROLE_TABS.includes(tab)) return;
+      this.activeTab = tab;
+      this.$router.replace({ path: this.$route.path, query: { tab } }).catch(() => {});
+    },
+
+    async copyChildId() {
+      if (!this.child) return;
+      try {
+        await navigator.clipboard.writeText(String(this.child.id));
+        this.toast('Child ID copied');
+      } catch (e) {
+        this.toast('Copy not supported', 'warn', 'mdi-alert-outline');
+      }
+    },
+
     async load() {
       this.loading = true;
       this.loadError = '';
@@ -400,18 +734,11 @@ export default {
         const allBookings = bookingsRes.data?.data || [];
         const allRequests = requestsRes.data?.data || [];
         this.bookings = allBookings.filter((b) => String(b.child_id) === String(this.childId));
-        this.requests = allRequests.filter((r) => String(r.child_id) === String(this.childId));
+        this.requests = allRequests
+          .filter((r) => String(r.child_id) === String(this.childId))
+          .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 
-        if (this.child) {
-          this.form.full_name = this.child.full_name || '';
-          this.form.dob = this.child.dob ? String(this.child.dob).split('T')[0] : '';
-          this.form.gender = this.child.gender || '';
-          this.form.county = this.child.county || '';
-          this.form.area = this.child.area || '';
-          this.form.school_name = this.child.school_name || '';
-          this.form.notes = this.child.notes || '';
-          this.form.diagnosis_optional = this.child.diagnosis_optional || '';
-        }
+        if (this.child) this.syncForm();
       } catch (err) {
         const status = err.response?.status;
         if (status === 404) {
@@ -430,10 +757,21 @@ export default {
       }
     },
 
+    syncForm() {
+      if (!this.child) return;
+      this.form.full_name = this.child.full_name || '';
+      this.form.dob = this.child.dob ? String(this.child.dob).split('T')[0] : '';
+      this.form.gender = this.child.gender || '';
+      this.form.county = this.child.county || '';
+      this.form.area = this.child.area || '';
+      this.form.school_name = this.child.school_name || '';
+      this.form.notes = this.child.notes || '';
+      this.form.diagnosis_optional = this.child.diagnosis_optional || '';
+    },
+
     async save() {
       if (!this.canSave || this.saving) return;
       this.saveError = '';
-      this.saveSuccess = '';
       this.saving = true;
 
       try {
@@ -456,8 +794,8 @@ export default {
         );
 
         this.child = data.data || this.child;
-        this.saveSuccess = 'Changes saved.';
-        setTimeout(() => { this.saveSuccess = ''; }, 3000);
+        this.syncForm();
+        this.toast('Changes saved');
       } catch (err) {
         const status = err.response?.status;
         const body = err.response?.data;
@@ -479,9 +817,10 @@ export default {
       try {
         const headers = await this.authHeader();
         await axios.delete(`${API}/api/children/${this.childId}`, { headers });
-        this.$router.push('/dashboard/parent?tab=children').catch(() => {});
+        this.toast('Child archived', 'warn', 'mdi-archive-outline');
+        setTimeout(() => this.goBack(), 500);
       } catch (err) {
-        this.saveError = 'Could not archive. Please try again.';
+        this.toast('Could not archive. Try again.', 'error', 'mdi-alert-circle-outline');
         this.showArchiveConfirm = false;
       } finally {
         this.saving = false;
@@ -495,7 +834,7 @@ export default {
       }).catch(() => {});
     },
 
-    // Helpers
+    /* ---- Helpers ---- */
     age(dob) {
       if (!dob) return 'Age not set';
       const d = new Date(dob);
@@ -508,6 +847,7 @@ export default {
       if (years === 1) return '1 yr';
       return `${years} yrs`;
     },
+
     genderLabel(g) {
       const map = {
         male: 'Boy',
@@ -517,15 +857,12 @@ export default {
       };
       return map[g] || '';
     },
-    dayOf(dt) { return new Date(dt).getDate(); },
-    monthOf(dt) {
-      return new Date(dt).toLocaleString('en-US', { month: 'short' }).toUpperCase();
-    },
-    timeOf(dt) {
-      return new Date(dt).toLocaleTimeString('en-US', {
-        hour: '2-digit', minute: '2-digit'
-      });
-    },
+
+    dowOf(ts)   { return new Date(ts).toLocaleDateString('en-KE', { weekday: 'short' }); },
+    dayOf(ts)   { return new Date(ts).getDate(); },
+    monthOf(ts) { return new Date(ts).toLocaleDateString('en-KE', { month: 'short' }).toUpperCase(); },
+    timeOf(ts)  { return new Date(ts).toLocaleTimeString('en-KE', { hour: '2-digit', minute: '2-digit' }); },
+
     statusClass(status) {
       const s = String(status || '').toLowerCase();
       if (['confirmed', 'completed', 'assigned', 'active'].includes(s)) return 'status-green';
@@ -533,6 +870,7 @@ export default {
       if (['cancelled', 'no_show', 'rejected'].includes(s)) return 'status-red';
       return 'status-grey';
     },
+
     statusLabel(status) {
       const s = String(status || '').toLowerCase();
       const m = {
@@ -548,6 +886,7 @@ export default {
       };
       return m[s] || s || 'Unknown';
     },
+
     relativeTime(ts) {
       const diff = Date.now() - new Date(ts).getTime();
       const mins = Math.floor(diff / 60000);
@@ -559,6 +898,28 @@ export default {
       if (days === 1) return '1 day ago';
       if (days < 30) return `${days} days ago`;
       return new Date(ts).toLocaleDateString();
+    },
+
+    progressPercent(status) {
+      return {
+        submitted:   20,
+        routing:     45,
+        assigned:    70,
+        in_progress: 85,
+        completed:   100,
+        cancelled:   0
+      }[status] || 0;
+    },
+
+    progressLabel(status) {
+      return {
+        submitted:   'Submitted — waiting for review',
+        routing:     'Routing to a professional',
+        assigned:    'Assigned to a professional',
+        in_progress: 'Assessment in progress',
+        completed:   'Report ready',
+        cancelled:   'Cancelled'
+      }[status] || status;
     }
   }
 };
@@ -566,249 +927,408 @@ export default {
 
 <style scoped>
 .child-page {
+  --purple: #4a3b8c;
+  --purple-2: #5b4b9e;
+  --teal: #56c2d9;
+  --teal-2: #7ec8e3;
+  --pink: #e86a8a;
+  --pink-2: #f48fb1;
+  --ink: #2c3e50;
+  --muted: #7f8c8d;
+  --line: #ececf1;
+  --bg: #f5f7fb;
+
   min-height: 100vh;
-  background: #f3f7fb;
+  background: var(--bg);
   padding-bottom: 48px;
 }
 
-/* TOP BAR */
+/* TOPBAR */
 .topbar {
-  position: sticky;
-  top: 0;
-  z-index: 40;
-  background: #ffffff;
-  border-bottom: 1px solid #ececf1;
-  height: 60px;
-  padding: 0 12px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+  position: sticky; top: 0; z-index: 40;
+  background: rgba(255, 255, 255, 0.94);
+  backdrop-filter: saturate(160%) blur(10px);
+  -webkit-backdrop-filter: saturate(160%) blur(10px);
+  border-bottom: 1px solid transparent;
+  height: 60px; padding: 0 12px;
+  display: flex; align-items: center; justify-content: space-between;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
-@media (min-width: 768px) {
-  .topbar { padding: 0 24px; }
-}
-.back-btn,
-.icon-btn {
-  width: 38px;
-  height: 38px;
-  border-radius: 10px;
-  background: #f3f7fb;
-  border: none;
-  display: grid;
-  place-items: center;
-  cursor: pointer;
+.topbar.scrolled { border-bottom-color: var(--line); box-shadow: 0 8px 24px -18px rgba(44, 62, 80, 0.25); }
+@media (min-width: 768px) { .topbar { padding: 0 24px; } }
+
+.back-btn, .icon-btn {
+  width: 38px; height: 38px; border-radius: 10px; background: #f3f7fb;
+  border: none; display: grid; place-items: center; cursor: pointer;
   transition: background 0.15s ease;
 }
-.back-btn:hover,
-.icon-btn:hover { background: #e6eef5; }
-.topbar-title {
-  font-size: 0.98rem;
-  font-weight: 800;
-  color: #2c3e50;
-  letter-spacing: -0.01em;
+.back-btn:hover, .icon-btn:hover { background: #e6eef5; }
+.spinning { animation: spin 0.9s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.topbar-title { font-size: 0.98rem; font-weight: 800; color: var(--ink); letter-spacing: -0.01em; }
+
+/* TABS */
+.tabs {
+  position: sticky; top: 60px; z-index: 30;
+  background: rgba(255, 255, 255, 0.94);
+  backdrop-filter: saturate(160%) blur(10px);
+  -webkit-backdrop-filter: saturate(160%) blur(10px);
+  border-bottom: 1px solid var(--line);
+  padding: 0 8px;
+  display: flex; gap: 2px;
+  overflow-x: auto; scrollbar-width: none;
 }
+.tabs::-webkit-scrollbar { display: none; }
+@media (min-width: 768px) { .tabs { padding: 0 24px; } }
+
+.tab {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 15px 16px; border: none; background: transparent;
+  font-size: 0.82rem; font-weight: 700; color: var(--muted);
+  border-bottom: 2px solid transparent; cursor: pointer;
+  font-family: inherit; white-space: nowrap;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+.tab:hover { color: var(--purple); }
+.tab.active { color: var(--purple); border-bottom-color: var(--purple); }
+.tab-badge {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 18px; height: 18px; padding: 0 6px;
+  border-radius: 999px; background: var(--pink); color: #fff;
+  font-size: 0.62rem; font-weight: 800; margin-left: 4px;
+}
+.tab:not(.active) .tab-badge { background: #ede7f8; color: var(--purple); }
 
 /* MAIN */
-.main {
-  max-width: 640px;
-  margin: 0 auto;
-  padding: 24px 16px;
-}
-@media (min-width: 768px) {
-  .main { padding: 32px 24px; }
-}
+.main { max-width: 680px; margin: 0 auto; padding: 20px 16px; }
+@media (min-width: 768px) { .main { padding: 32px 24px; } }
 
-.loading {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 60px 0;
+/* SKELETON */
+.skeleton-wrap { padding-top: 4px; }
+.sk-hero {
+  height: 128px; border-radius: 22px;
+  background: linear-gradient(90deg, #eaedf3 0%, #f3f5f9 50%, #eaedf3 100%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s ease-in-out infinite;
+  margin-bottom: 14px;
 }
+.sk-strip { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 28px; }
+.sk-chip {
+  height: 58px; border-radius: 14px;
+  background: linear-gradient(90deg, #eaedf3 0%, #f3f5f9 50%, #eaedf3 100%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s ease-in-out infinite;
+}
+.sk-card {
+  height: 90px; border-radius: 18px;
+  background: linear-gradient(90deg, #eaedf3 0%, #f3f5f9 50%, #eaedf3 100%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s ease-in-out infinite;
+  margin-bottom: 12px;
+}
+@keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
 
-/* ERROR CARD */
+/* ERROR */
 .error-card {
-  background: #ffffff;
-  border-radius: 20px;
-  padding: 40px 24px;
-  text-align: center;
-  border: 1px solid #fdecea;
-  max-width: 520px;
-  margin: 24px auto;
+  background: #fff; border-radius: 20px; padding: 40px 24px;
+  text-align: center; border: 1px solid #fdecea;
+  max-width: 520px; margin: 24px auto;
 }
 .error-icon {
-  width: 84px;
-  height: 84px;
-  border-radius: 50%;
-  background: #fdecea;
-  display: grid;
-  place-items: center;
-  margin: 0 auto 20px;
+  width: 76px; height: 76px; border-radius: 50%; background: #fdecea;
+  display: grid; place-items: center; margin: 0 auto 16px;
 }
-.error-card h2 {
-  font-size: 1.15rem;
-  font-weight: 800;
-  color: #2c3e50;
-  margin: 0 0 10px;
-}
-.error-card p {
-  font-size: 0.9rem;
-  color: #7f8c8d;
-  line-height: 1.6;
-  margin: 0 0 24px;
-}
-.error-card .link-btn {
-  display: inline-block;
-  margin-top: 12px;
-  font-size: 0.85rem;
-}
+.error-card h2 { font-size: 1.15rem; font-weight: 800; color: var(--ink); margin: 0 0 10px; }
+.error-card p { font-size: 0.9rem; color: var(--muted); line-height: 1.6; margin: 0 0 22px; }
+.error-card .link-btn { display: inline-block; margin-top: 12px; }
 
-/* IDENTITY CARD */
-.identity-card {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  background: #ffffff;
-  border: 1px solid #ececf1;
-  border-radius: 20px;
-  padding: 20px;
-  margin-bottom: 20px;
+/* HERO */
+.hero {
+  position: relative; overflow: hidden;
+  background: linear-gradient(135deg, #4a3b8c 0%, #5b4b9e 55%, #7ec8e3 140%);
+  color: #fff;
+  border-radius: 22px;
+  padding: 22px 20px;
+  margin-bottom: 16px;
+  box-shadow: 0 24px 48px -20px rgba(74, 59, 140, 0.55);
 }
-.avatar-lg {
-  width: 72px;
-  height: 72px;
-  border-radius: 20px;
-  display: grid;
-  place-items: center;
-  color: #ffffff;
-  font-weight: 800;
-  font-size: 22px;
-  letter-spacing: 0.5px;
+.hero-body {
+  position: relative; z-index: 2;
+  display: flex; align-items: center; gap: 14px;
+}
+.hero-avatar {
+  width: 64px; height: 64px; border-radius: 18px;
+  color: #fff; display: grid; place-items: center;
+  font-weight: 800; font-size: 20px;
+  letter-spacing: 0.4px;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  box-shadow: 0 12px 24px -12px rgba(15, 13, 36, 0.5);
   flex: 0 0 auto;
 }
-.identity-body { min-width: 0; flex: 1; }
-.identity-name {
-  font-size: 1.1rem;
-  font-weight: 800;
-  color: #2c3e50;
-  margin-bottom: 4px;
+.hero-info { flex: 1; min-width: 0; }
+.hero-kicker {
+  font-size: 0.66rem; font-weight: 800; letter-spacing: 0.6px;
+  text-transform: uppercase; opacity: 0.78; margin-bottom: 4px;
 }
-.identity-meta {
-  font-size: 0.82rem;
-  color: #7f8c8d;
-  margin-bottom: 10px;
+.hero-title {
+  font-size: 1.25rem; font-weight: 800; letter-spacing: -0.02em;
+  margin: 0 0 8px; line-height: 1.2;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.identity-tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
+.hero-meta { display: flex; gap: 6px; flex-wrap: wrap; }
+.hero-chip {
+  display: inline-flex; align-items: center;
+  padding: 3px 9px; border-radius: 999px;
+  font-size: 0.68rem; font-weight: 700;
+  background: rgba(255, 255, 255, 0.18);
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  color: #fff;
+  text-transform: capitalize;
+  backdrop-filter: blur(6px);
 }
-.tag {
-  display: inline-flex;
-  align-items: center;
-  font-size: 0.7rem;
-  font-weight: 700;
-  padding: 4px 10px;
-  border-radius: 999px;
-  letter-spacing: 0.2px;
+.hero-copy {
+  flex: 0 0 auto;
+  width: 34px; height: 34px; border-radius: 10px;
+  background: rgba(255, 255, 255, 0.18);
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  display: grid; place-items: center; cursor: pointer;
+  transition: background 0.15s ease;
 }
-.tag-blue { background: #d9f0f6; color: #0288a5; }
-.tag-pink { background: #fce4ec; color: #c2185b; }
+.hero-copy:hover { background: rgba(255, 255, 255, 0.28); }
+.hero-glow {
+  position: absolute; top: -40%; right: -20%; width: 280px; height: 280px;
+  background: radial-gradient(circle, rgba(232, 106, 138, 0.5), transparent 70%);
+  filter: blur(20px); pointer-events: none;
+}
+
+/* STAT STRIP */
+.stat-strip {
+  display: grid; grid-template-columns: repeat(3, 1fr);
+  gap: 10px; margin-bottom: 24px;
+}
+.stat-chip {
+  display: flex; align-items: center; gap: 10px;
+  background: #fff; border: 1px solid var(--line); border-radius: 14px;
+  padding: 12px; cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+}
+.stat-chip:hover { transform: translateY(-2px); box-shadow: 0 14px 24px -18px rgba(74, 59, 140, 0.4); border-color: #d9d2ec; }
+.stat-chip:active { transform: translateY(0) scale(0.99); }
+.stat-icon {
+  width: 34px; height: 34px; border-radius: 10px;
+  display: grid; place-items: center; flex: 0 0 auto;
+}
+.stat-body { min-width: 0; }
+.stat-value { font-size: 1.05rem; font-weight: 900; color: var(--ink); line-height: 1; }
+.stat-label { font-size: 0.62rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.4px; margin-top: 3px; }
+.gradient-purple { background: linear-gradient(135deg, #4a3b8c, #5b4b9e); }
+.gradient-pink   { background: linear-gradient(135deg, #e86a8a, #f48fb1); }
+.gradient-teal   { background: linear-gradient(135deg, #3a9fb8, #7ec8e3); }
+
+/* GREETING */
+.greeting { margin-bottom: 18px; }
+.greeting h1 { font-size: 1.5rem; font-weight: 800; letter-spacing: -0.02em; color: var(--ink); margin: 0 0 6px; }
+.greeting p { font-size: 0.9rem; color: var(--muted); margin: 0; }
+
+.greeting-row {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 16px; margin-bottom: 18px; flex-wrap: wrap;
+}
+.greeting-row h1 { font-size: 1.5rem; font-weight: 800; letter-spacing: -0.02em; color: var(--ink); margin: 0 0 6px; }
+.greeting-row p { font-size: 0.9rem; color: var(--muted); margin: 0; }
+
+.section-head {
+  display: flex; align-items: center; justify-content: space-between;
+  margin: 0 0 12px;
+}
+.section-head h2 { font-size: 1.02rem; font-weight: 800; color: var(--ink); margin: 0; letter-spacing: -0.01em; }
+.link-btn {
+  background: transparent; border: none; color: var(--purple);
+  font-size: 0.82rem; font-weight: 700; cursor: pointer; font-family: inherit;
+}
+.mt-6 { margin-top: 24px; }
+.mt-4 { margin-top: 16px; }
+.mt-3 { margin-top: 12px; }
 
 /* QUICK ACTIONS */
-.quick-actions {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 10px;
-  margin-bottom: 20px;
+.quick-actions { display: grid; grid-template-columns: 1fr; gap: 10px; margin-bottom: 4px; }
+@media (min-width: 640px) { .quick-actions { grid-template-columns: repeat(3, 1fr); } }
+.qa-card {
+  display: flex; align-items: center; gap: 12px;
+  background: #fff; border: 1px solid var(--line); border-radius: 16px;
+  padding: 14px; cursor: pointer; font-family: inherit;
+  transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
 }
-.quick-action {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 10px;
-  padding: 16px 8px;
-  background: #ffffff;
-  border: 1px solid #ececf1;
-  border-radius: 14px;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  font-family: inherit;
-}
-.quick-action:hover {
-  transform: translateY(-2px);
-  border-color: #c8c0e0;
-  box-shadow: 0 10px 20px -10px rgba(74, 59, 140, 0.2);
-}
+.qa-card:hover { transform: translateY(-2px); box-shadow: 0 18px 32px -20px rgba(74, 59, 140, 0.35); border-color: #d9d2ec; }
+.qa-card:active { transform: translateY(0) scale(0.99); }
 .qa-icon {
-  width: 44px;
-  height: 44px;
-  border-radius: 12px;
-  display: grid;
-  place-items: center;
+  width: 40px; height: 40px; border-radius: 12px;
+  display: grid; place-items: center; flex: 0 0 auto;
+  box-shadow: 0 8px 18px -10px rgba(74, 59, 140, 0.5);
 }
-.quick-action span {
-  font-size: 0.76rem;
-  font-weight: 700;
-  color: #2c3e50;
-  text-align: center;
-  line-height: 1.3;
-}
+.qa-text { flex: 1; min-width: 0; text-align: left; }
+.qa-title { font-size: 0.88rem; font-weight: 800; color: var(--ink); margin-bottom: 2px; }
+.qa-sub { font-size: 0.72rem; color: var(--muted); }
+.qa-arrow { flex: 0 0 auto; }
 
-/* CARDS */
+/* CARD */
 .card {
-  background: #ffffff;
-  border: 1px solid #ececf1;
-  border-radius: 18px;
-  padding: 20px;
-  margin-bottom: 16px;
+  background: #fff; border: 1px solid var(--line);
+  border-radius: 18px; padding: 20px; margin-bottom: 16px;
 }
 .card-title {
-  font-size: 0.98rem;
-  font-weight: 800;
-  color: #2c3e50;
-  margin: 0 0 16px;
-  letter-spacing: -0.01em;
+  font-size: 0.98rem; font-weight: 800; color: var(--ink);
+  margin: 0 0 14px; letter-spacing: -0.01em;
 }
 .danger-card { border-color: #fdecea; }
 .danger-title { color: #c0392b; }
 
 .note-text {
-  font-size: 0.9rem;
-  color: #4a5568;
-  line-height: 1.65;
-  margin: 0;
-  white-space: pre-wrap;
+  font-size: 0.9rem; color: #4a5568; line-height: 1.65;
+  margin: 0; white-space: pre-wrap;
 }
+
+/* LISTS */
+.list { display: grid; gap: 10px; }
+.list-row {
+  display: flex; align-items: center; gap: 14px;
+  background: #fff; border: 1px solid var(--line);
+  border-radius: 16px; padding: 14px 16px;
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+}
+.list-row:hover { border-color: #d9d2ec; transform: translateY(-1px); box-shadow: 0 16px 28px -20px rgba(74, 59, 140, 0.35); }
+.list-row:active { transform: translateY(0) scale(0.995); }
+.list-row.clickable { position: relative; }
+.list-row.clickable::before {
+  content: ''; position: absolute; left: 0; top: 14px; bottom: 14px;
+  width: 3px; border-radius: 0 3px 3px 0;
+  background: linear-gradient(180deg, var(--purple), var(--teal-2));
+  opacity: 0; transition: opacity 0.15s ease;
+}
+.list-row.clickable:hover::before { opacity: 1; }
+
+/* DATE BLOCK */
+.date-block {
+  width: 52px; flex: 0 0 auto;
+  background: linear-gradient(180deg, #f7f5ff, #ece7fa);
+  border-radius: 14px;
+  padding: 8px 0;
+  text-align: center;
+  border: 1px solid #e5def5;
+}
+.db-dow {
+  font-size: 0.6rem; font-weight: 800; letter-spacing: 0.5px;
+  text-transform: uppercase; color: var(--purple);
+  opacity: 0.75;
+}
+.db-day {
+  font-size: 1.25rem; font-weight: 900; color: var(--purple);
+  line-height: 1; margin: 3px 0;
+}
+.db-mon {
+  font-size: 0.62rem; font-weight: 800; letter-spacing: 0.5px;
+  text-transform: uppercase; color: var(--purple);
+  opacity: 0.7;
+}
+
+.row-body { flex: 1; min-width: 0; }
+.row-title { font-size: 0.94rem; font-weight: 800; color: var(--ink); margin-bottom: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row-sub { font-size: 0.78rem; color: var(--muted); margin-bottom: 3px; text-transform: capitalize; }
+.row-meta { font-size: 0.72rem; color: #95a5a6; display: flex; align-items: center; gap: 6px; }
+.row-tail { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
+.chev { opacity: 0.55; transition: opacity 0.15s ease, transform 0.15s ease; }
+.list-row:hover .chev { opacity: 1; transform: translateX(2px); }
+
+/* EMPTY STATE */
+.empty-state {
+  display: flex; flex-direction: column; align-items: center;
+  padding: 32px 24px; text-align: center;
+  background: #fff; border: 1px dashed #d4dae4; border-radius: 18px;
+}
+.empty-illustration {
+  width: 60px; height: 60px; border-radius: 50%;
+  background: linear-gradient(135deg, #ede7f8, #e6f4f8);
+  display: grid; place-items: center;
+  margin-bottom: 14px;
+}
+.empty-title { font-size: 0.95rem; font-weight: 800; color: var(--ink); }
+.empty-sub   { font-size: 0.82rem; color: var(--muted); margin-top: 4px; max-width: 320px; line-height: 1.5; }
+
+/* SUB TABS */
+.sub-tabs {
+  display: flex; gap: 4px; background: #fff;
+  border: 1px solid var(--line); border-radius: 12px;
+  padding: 4px; margin-bottom: 16px;
+  overflow-x: auto; scrollbar-width: none;
+}
+.sub-tabs::-webkit-scrollbar { display: none; }
+.sub-tab {
+  flex: 1; padding: 9px 14px; border: none; background: transparent;
+  border-radius: 8px; font-size: 0.8rem; font-weight: 700;
+  color: var(--muted); cursor: pointer; font-family: inherit;
+  white-space: nowrap; transition: all 0.15s ease;
+}
+.sub-tab.active { background: var(--purple); color: #fff; box-shadow: 0 6px 14px -8px rgba(74, 59, 140, 0.6); }
+
+/* ASSESSMENT ROW */
+.assessment-row {
+  background: #fff; border: 1px solid var(--line); border-radius: 16px;
+  padding: 14px 16px;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+}
+.assessment-row:hover { border-color: #d9d2ec; transform: translateY(-1px); }
+.assess-head { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+.assess-icon {
+  width: 40px; height: 40px; border-radius: 12px;
+  display: grid; place-items: center; flex: 0 0 auto;
+}
+.assess-body { flex: 1; min-width: 0; }
+.assess-concern {
+  font-size: 0.82rem; color: #556; font-style: italic;
+  padding: 10px 12px; background: #f7f9fc;
+  border-left: 3px solid #c8c0e0;
+  border-radius: 6px;
+  margin-bottom: 12px;
+  line-height: 1.5;
+}
+.assess-progress { margin-top: 4px; }
+.progress-track { height: 6px; background: #eef1f6; border-radius: 999px; overflow: hidden; }
+.progress-fill {
+  height: 100%; border-radius: 999px;
+  background: linear-gradient(90deg, #4a3b8c, #7ec8e3);
+  transition: width 0.5s ease;
+}
+.progress-label { font-size: 0.72rem; color: var(--muted); margin-top: 6px; font-weight: 600; }
+
+/* STATUS PILLS */
+.status-pill {
+  display: inline-flex; align-items: center;
+  font-size: 0.62rem; font-weight: 800; padding: 5px 10px;
+  border-radius: 999px; text-transform: uppercase;
+  letter-spacing: 0.4px; white-space: nowrap; flex: 0 0 auto;
+}
+.status-green { background: #e6f9ee; color: #229954; }
+.status-amber { background: #fef3e0; color: #b7791f; }
+.status-red   { background: #fdecea; color: #c0392b; }
+.status-grey  { background: #ececf1; color: #7f8c8d; }
 
 /* FORM */
 .field-label {
-  display: block;
-  font-size: 0.82rem;
-  font-weight: 700;
-  color: #2c3e50;
-  margin-bottom: 8px;
+  display: flex; align-items: center; justify-content: space-between;
+  font-size: 0.82rem; font-weight: 700; color: var(--ink); margin-bottom: 8px;
 }
-.mt-3 { margin-top: 12px; }
-.mt-4 { margin-top: 20px; }
+.field-hint { font-size: 0.7rem; font-weight: 600; color: var(--muted); }
 
 .text-input {
-  width: 100%;
-  padding: 13px 16px;
-  border: 1.5px solid #e0e4eb;
-  border-radius: 12px;
-  font-size: 0.95rem;
-  background: #ffffff;
-  color: #2c3e50;
+  width: 100%; padding: 13px 16px;
+  border: 1.5px solid #e0e4eb; border-radius: 12px;
+  font-size: 0.95rem; background: #fff; color: var(--ink);
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
-  outline: none;
-  font-family: inherit;
-  -webkit-appearance: none;
-  appearance: none;
+  outline: none; font-family: inherit;
+  -webkit-appearance: none; appearance: none;
 }
-.text-input:focus {
-  border-color: #4a3b8c;
-  box-shadow: 0 0 0 3px rgba(74, 59, 140, 0.1);
-}
+.text-input:focus { border-color: var(--purple); box-shadow: 0 0 0 3px rgba(74, 59, 140, 0.1); }
 .text-input:disabled { background: #f7f8fb; cursor: not-allowed; }
 .textarea { resize: vertical; min-height: 100px; line-height: 1.55; }
 select.text-input {
@@ -819,283 +1339,170 @@ select.text-input {
   padding-right: 40px;
 }
 
-/* CHIPS (gender selector) */
+/* CHIP SELECTOR */
 .chip-row { display: flex; flex-wrap: wrap; gap: 8px; }
 .chip {
-  display: inline-flex;
-  align-items: center;
-  padding: 10px 16px;
-  border-radius: 999px;
-  border: 1.5px solid #e0e4eb;
-  background: #ffffff;
-  color: #2c3e50;
-  font-size: 0.85rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.15s ease;
-  font-family: inherit;
+  display: inline-flex; align-items: center;
+  padding: 10px 16px; border-radius: 999px;
+  border: 1.5px solid #e0e4eb; background: #fff;
+  color: var(--ink); font-size: 0.85rem; font-weight: 600;
+  cursor: pointer; transition: all 0.15s ease; font-family: inherit;
   min-height: 40px;
 }
-.chip:hover:not(:disabled) { border-color: #4a3b8c; color: #4a3b8c; }
+.chip:hover:not(:disabled) { border-color: var(--purple); color: var(--purple); }
 .chip.active {
-  background: #4a3b8c;
-  color: #ffffff;
-  border-color: #4a3b8c;
+  background: linear-gradient(135deg, var(--purple), var(--purple-2));
+  color: #fff; border-color: var(--purple);
+  box-shadow: 0 8px 18px -10px rgba(74, 59, 140, 0.6);
 }
 .chip:disabled { opacity: 0.6; cursor: not-allowed; }
 
-/* ROW BUTTONS */
+/* ROW BUTTONS (danger zone) */
 .row-btn {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  width: 100%;
-  padding: 12px 4px;
-  background: transparent;
-  border: none;
-  text-align: left;
-  cursor: pointer;
-  font-family: inherit;
-  border-radius: 10px;
-  transition: background 0.15s ease;
+  display: flex; align-items: center; gap: 14px;
+  width: 100%; padding: 12px 4px;
+  background: transparent; border: none;
+  text-align: left; cursor: pointer; font-family: inherit;
+  border-radius: 10px; transition: background 0.15s ease;
 }
 .row-btn:hover { background: #f7f8fb; }
 .row-icon {
-  width: 40px;
-  height: 40px;
-  border-radius: 12px;
-  display: grid;
-  place-items: center;
-  flex: 0 0 auto;
+  width: 40px; height: 40px; border-radius: 12px;
+  display: grid; place-items: center; flex: 0 0 auto;
 }
-.row-body { flex: 1; min-width: 0; }
-.row-title {
-  font-size: 0.9rem;
-  font-weight: 700;
-  color: #2c3e50;
-  margin-bottom: 2px;
-}
-.row-sub { font-size: 0.76rem; color: #7f8c8d; }
+.row-btn .row-body { flex: 1; min-width: 0; }
+.row-btn .row-title { font-size: 0.9rem; font-weight: 700; color: var(--ink); margin-bottom: 2px; }
+.row-btn .row-sub { font-size: 0.76rem; color: var(--muted); }
 .danger-row .row-title { color: #c0392b; }
-
-/* LISTS */
-.mini-empty {
-  display: flex;
-  align-items: center;
-  padding: 16px;
-  background: #f3f7fb;
-  border: 1px dashed #d4dae4;
-  border-radius: 12px;
-  font-size: 0.85rem;
-  color: #7f8c8d;
-}
-.bookings-list,
-.requests-list {
-  display: grid;
-  gap: 10px;
-}
-.booking-row,
-.request-row {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  background: #f9fafc;
-  border-radius: 12px;
-  padding: 12px;
-}
-.booking-row {
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-.booking-row:hover {
-  background: #f3f0fc;
-  transform: translateY(-1px);
-  box-shadow: 0 12px 24px -14px rgba(74, 59, 140, 0.25);
-}
-.booking-date {
-  flex: 0 0 48px;
-  text-align: center;
-  background: #ffffff;
-  border-radius: 10px;
-  padding: 6px 4px;
-}
-.booking-day {
-  font-size: 1.05rem;
-  font-weight: 900;
-  color: #4a3b8c;
-  line-height: 1;
-  letter-spacing: -0.02em;
-}
-.booking-month {
-  font-size: 0.6rem;
-  font-weight: 800;
-  color: #7f8c8d;
-  letter-spacing: 1px;
-  margin-top: 3px;
-}
-.booking-info,
-.request-body { flex: 1; min-width: 0; }
-.booking-title,
-.request-title {
-  font-size: 0.88rem;
-  font-weight: 700;
-  color: #2c3e50;
-  margin-bottom: 2px;
-}
-.booking-sub,
-.request-sub {
-  font-size: 0.76rem;
-  color: #7f8c8d;
-  text-transform: capitalize;
-}
-.request-icon {
-  flex: 0 0 38px;
-  height: 38px;
-  border-radius: 10px;
-  background: #e6e0f5;
-  display: grid;
-  place-items: center;
-}
-
-/* STATUS PILLS */
-.status-pill {
-  font-size: 0.66rem;
-  font-weight: 800;
-  padding: 5px 10px;
-  border-radius: 999px;
-  text-transform: uppercase;
-  letter-spacing: 0.3px;
-  white-space: nowrap;
-}
-.status-green { background: #e6f9ee; color: #229954; }
-.status-amber { background: #fef3e0; color: #b7791f; }
-.status-red   { background: #fdecea; color: #c0392b; }
-.status-grey  { background: #ececf1; color: #7f8c8d; }
 
 /* BUTTONS */
 .primary-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 100%;
-  padding: 14px 22px;
-  border-radius: 12px;
-  border: none;
-  background: linear-gradient(135deg, #4a3b8c, #5b4b9e);
-  color: #ffffff;
-  font-size: 0.92rem;
-  font-weight: 700;
-  cursor: pointer;
-  transition: transform 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease;
-  box-shadow: 0 8px 20px rgba(74, 59, 140, 0.28);
-  font-family: inherit;
-  min-height: 50px;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 100%; padding: 14px 22px; border-radius: 12px; border: none;
+  background: linear-gradient(135deg, var(--purple), var(--purple-2));
+  color: #fff; font-size: 0.92rem; font-weight: 700; cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  box-shadow: 0 12px 24px -12px rgba(74, 59, 140, 0.7);
+  font-family: inherit; min-height: 50px;
 }
-.primary-btn:hover:not(:disabled) {
-  transform: translateY(-1px);
-  box-shadow: 0 10px 24px rgba(74, 59, 140, 0.34);
-}
-.primary-btn:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
-  transform: none;
-  box-shadow: 0 4px 10px rgba(74, 59, 140, 0.18);
-}
+.primary-btn:hover:not(:disabled) { transform: translateY(-1px); }
+.primary-btn:active:not(:disabled) { transform: translateY(0) scale(0.99); }
+.primary-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+.primary-btn.small { padding: 9px 16px; font-size: 0.82rem; min-height: 40px; width: auto; }
+
 .btn-secondary {
-  padding: 12px 20px;
-  border-radius: 12px;
-  border: 1.5px solid #e0e4eb;
-  background: #ffffff;
-  color: #2c3e50;
-  font-size: 0.9rem;
-  font-weight: 700;
-  cursor: pointer;
-  font-family: inherit;
+  padding: 12px 20px; border-radius: 12px; border: 1.5px solid #e0e4eb;
+  background: #fff; color: var(--ink);
+  font-size: 0.9rem; font-weight: 700; cursor: pointer; font-family: inherit;
 }
 .btn-danger {
-  padding: 12px 20px;
-  border-radius: 12px;
-  border: none;
-  background: #e74c3c;
-  color: #ffffff;
-  font-size: 0.9rem;
-  font-weight: 700;
-  cursor: pointer;
-  font-family: inherit;
+  padding: 12px 20px; border-radius: 12px; border: none;
+  background: linear-gradient(135deg, #e74c3c, #c0392b); color: #fff;
+  font-size: 0.9rem; font-weight: 700; cursor: pointer; font-family: inherit;
+  box-shadow: 0 10px 22px -12px rgba(231, 76, 60, 0.7);
 }
+.btn-danger:disabled { opacity: 0.55; cursor: not-allowed; }
+
 .loading-row { display: inline-flex; align-items: center; gap: 8px; }
+
 .link-btn {
-  display: inline-flex;
-  align-items: center;
-  background: transparent;
-  border: none;
-  color: #4a3b8c;
-  font-weight: 700;
-  font-size: 0.85rem;
-  cursor: pointer;
-  font-family: inherit;
-  padding: 4px 0;
+  display: inline-flex; align-items: center;
+  background: transparent; border: none;
+  color: var(--purple); font-weight: 700; font-size: 0.85rem;
+  cursor: pointer; font-family: inherit; padding: 4px 0;
 }
 .link-btn:hover { text-decoration: underline; }
 
 /* MESSAGES */
-.error-box,
-.success-box {
-  margin-top: 14px;
-  padding: 12px 14px;
-  border-radius: 10px;
-  font-size: 0.83rem;
-  font-weight: 500;
-  display: flex;
-  align-items: center;
-  line-height: 1.45;
+.error-box {
+  margin-top: 14px; padding: 12px 14px;
+  border-radius: 12px; background: #fdecea; color: #c0392b;
+  font-size: 0.83rem; font-weight: 500;
+  display: flex; align-items: center; line-height: 1.45;
 }
-.error-box { background: #fdecea; color: #c0392b; }
-.success-box { background: #e6f9ee; color: #229954; }
 
 /* MODAL */
 .modal-backdrop {
-  position: fixed;
-  inset: 0;
-  background: rgba(15, 13, 36, 0.5);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 100;
-  padding: 20px;
+  position: fixed; inset: 0; background: rgba(15, 13, 36, 0.55);
+  backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 100; padding: 20px;
 }
 .modal {
-  background: #ffffff;
-  border-radius: 20px;
-  padding: 24px;
-  max-width: 380px;
-  width: 100%;
-  box-shadow: 0 30px 60px -20px rgba(15, 13, 36, 0.4);
+  background: #fff; border-radius: 22px;
+  max-width: 420px; width: 100%; max-height: 90vh;
+  display: flex; flex-direction: column; overflow: hidden;
+  box-shadow: 0 40px 80px -24px rgba(15, 13, 36, 0.5);
+  padding: 24px 22px 18px;
+  text-align: center;
 }
-.modal-title {
-  font-size: 1.05rem;
-  font-weight: 800;
-  color: #2c3e50;
-  margin: 0 0 8px;
+.modal-sm { max-width: 400px; }
+.confirm-icon {
+  width: 68px; height: 68px; border-radius: 50%;
+  background: #fdecea;
+  display: grid; place-items: center;
+  margin: 0 auto 14px;
 }
-.modal-text {
-  font-size: 0.88rem;
-  color: #7f8c8d;
-  margin: 0 0 20px;
-  line-height: 1.55;
+.confirm-title { font-size: 1.05rem; font-weight: 800; color: var(--ink); margin: 0 0 8px; }
+.confirm-text { font-size: 0.88rem; color: var(--muted); line-height: 1.55; margin: 0 0 20px; }
+.modal-footer {
+  display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;
 }
-.modal-actions {
-  display: flex;
-  gap: 10px;
-  justify-content: flex-end;
-}
+.modal-footer button { min-width: 130px; }
 
-/* RESPONSIVE */
+/* TOASTS */
+.toast-wrap {
+  position: fixed; bottom: 24px; right: 24px; z-index: 200;
+  display: flex; flex-direction: column; gap: 10px; align-items: flex-end;
+  pointer-events: none;
+}
+.toast {
+  position: relative; overflow: hidden;
+  display: inline-flex; align-items: center;
+  padding: 12px 18px 14px; border-radius: 12px;
+  font-size: 0.85rem; font-weight: 700; color: #fff;
+  box-shadow: 0 20px 40px -16px rgba(15, 13, 36, 0.5);
+  max-width: 340px;
+}
+.toast-text { flex: 1; }
+.toast-bar {
+  position: absolute; left: 0; right: 0; bottom: 0;
+  height: 2px; background: rgba(255, 255, 255, 0.45);
+  transform-origin: left;
+  animation: toastBar 3.2s linear forwards;
+}
+@keyframes toastBar { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+.toast-success { background: linear-gradient(135deg, #229954, #2ecc71); }
+.toast-warn    { background: linear-gradient(135deg, #b7791f, #f39c12); }
+.toast-error   { background: linear-gradient(135deg, #c0392b, #e74c3c); }
+
+/* TRANSITIONS */
+.fade-slide-enter-active, .fade-slide-leave-active { transition: opacity 0.2s ease, transform 0.2s ease; }
+.fade-slide-enter { opacity: 0; transform: translateY(8px); }
+.fade-slide-leave-to { opacity: 0; transform: translateY(-4px); }
+
+.modal-enter-active, .modal-leave-active { transition: opacity 0.2s ease; }
+.modal-enter-active .modal, .modal-leave-active .modal { transition: transform 0.25s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.2s ease; }
+.modal-enter, .modal-leave-to { opacity: 0; }
+.modal-enter .modal, .modal-leave-to .modal { transform: translateY(20px) scale(0.97); opacity: 0; }
+
+.toast-enter-active, .toast-leave-active { transition: all 0.25s cubic-bezier(0.2, 0.8, 0.2, 1); }
+.toast-enter, .toast-leave-to { opacity: 0; transform: translateX(20px); }
+
+/* MOBILE */
 @media (max-width: 599px) {
-  .identity-card { padding: 16px; }
-  .avatar-lg { width: 60px; height: 60px; border-radius: 16px; font-size: 18px; }
-  .identity-name { font-size: 1rem; }
+  .main { padding: 18px 14px; }
+  .hero { padding: 20px 16px; border-radius: 18px; }
+  .hero-avatar { width: 56px; height: 56px; font-size: 18px; }
+  .hero-title { font-size: 1.1rem; }
+  .stat-strip { gap: 8px; }
+  .stat-chip { flex-direction: column; align-items: flex-start; padding: 10px; gap: 6px; }
+  .stat-value { font-size: 1rem; }
   .card { padding: 16px; }
-  .quick-action span { font-size: 0.7rem; }
+  .quick-actions { grid-template-columns: 1fr; }
+  .modal-footer { flex-direction: column-reverse; }
+  .modal-footer button { width: 100%; min-width: 0; }
+  .toast-wrap { left: 14px; right: 14px; align-items: stretch; }
+  .toast { max-width: none; }
 }
 </style>
