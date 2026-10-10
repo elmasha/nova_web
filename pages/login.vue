@@ -293,7 +293,12 @@ export default {
           const cred = await auth.createUserWithEmailAndPassword(this.email, this.password);
           user = cred.user;
           if (this.displayName) {
-            await user.updateProfile({ displayName: this.displayName });
+            try {
+              await user.updateProfile({ displayName: this.displayName });
+            } catch (profileErr) {
+              // Non-fatal — the backend will use `display_name` from the request body
+              console.warn('[updateProfile]', profileErr.message);
+            }
           }
         } else {
           const cred = await auth.signInWithEmailAndPassword(this.email, this.password);
@@ -329,36 +334,40 @@ export default {
 
     /**
      * After Firebase auth succeeds:
-     * 1. Provision the user row (create if missing, update role if existing).
-     * 2. Push to /dashboard — the redirector reads the role and routes.
+     * 1. Try /api/auth/provision (works if the user row already exists).
+     * 2. If 403 (no row), call /api/auth/register-first.
+     * 3. If that also fails, fall through — /api/auth/me auto-provisions.
+     * 4. Redirect to /dashboard for role-based routing.
      */
     async afterAuth(user) {
       try {
         const token = await user.getIdToken();
         const authHeader = { Authorization: `Bearer ${token}` };
+        const payload = {
+          role: this.role,
+          display_name: user.displayName || this.displayName || null,
+          email: user.email || this.email || null
+        };
 
-        // 1) Try /provision — works if the user row already exists
         let provisioned = false;
+
+        // 1) Try /provision — updates role for existing users
         try {
-          await axios.post(
-            `${API}/api/auth/provision`,
-            {
-              role: this.role,
-              display_name: user.displayName || this.displayName || null,
-              email: user.email || this.email || null
-            },
-            { headers: authHeader }
-          );
+          await axios.post(`${API}/api/auth/provision`, payload, { headers: authHeader });
           provisioned = true;
         } catch (provErr) {
-          // 403 => user row doesn't exist yet on a brand-new signup
-          if (provErr.response?.status !== 403) {
+          const status = provErr.response?.status;
+          if (status === 403) {
+            // 403 => no user row yet; fall through to register-first
+            provisioned = false;
+          } else {
+            // Any other error — log and continue to the fallback
             console.warn('[provision]', provErr.response?.data || provErr.message);
           }
         }
 
-        // 2) If not provisioned, create the first row via /register-first
-        if (!provisioned) {
+        // 2) Brand-new signup — create the first row
+        if (!provisioned && user.uid) {
           try {
             await axios.post(
               `${API}/api/auth/register-first`,
@@ -370,17 +379,18 @@ export default {
               },
               { headers: authHeader }
             );
-          } catch (innerErr) {
-            // Auto-provision in the auth middleware will handle it on the next call
-            console.warn('[register-first]', innerErr.response?.data || innerErr.message);
+            provisioned = true;
+          } catch (regErr) {
+            // Not fatal — the auth middleware on /api/auth/me auto-provisions
+            console.warn('[register-first]', regErr.response?.data || regErr.message);
           }
         }
 
-        // 3) Route to the role-aware dashboard redirector
+        // 3) Route to /dashboard — the redirector reads role from backend
         this.safePush('/dashboard');
       } catch (err) {
         console.error('[afterAuth]', err);
-        // Fallback: still attempt the redirector — it re-reads role from the backend
+        // Fallback: still attempt the redirector — it will re-read role from backend
         this.safePush('/dashboard');
       }
     },
@@ -420,6 +430,10 @@ export default {
           return 'Network issue. Check your connection and try again.';
         case 'auth/operation-not-allowed':
           return 'Email/password sign-in is not enabled. Contact support.';
+        case 'auth/missing-password':
+          return 'Please enter your password.';
+        case 'auth/missing-email':
+          return 'Please enter your email address.';
         default:
           return err?.message || 'Something went wrong. Please try again.';
       }

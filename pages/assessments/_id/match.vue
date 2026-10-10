@@ -30,6 +30,24 @@
         <button class="link-btn mt-3" @click="goBack">Back to dashboard</button>
       </section>
 
+      <!-- ALREADY ROUTED -->
+      <section v-else-if="alreadyRouted" class="error-card">
+        <div class="empty-icon">
+          <v-icon size="38" color="#4a3b8c">mdi-check-circle-outline</v-icon>
+        </div>
+        <h2>This request is already routed</h2>
+        <p>
+          We've already matched this request with a professional.
+          You can check its status on your dashboard.
+        </p>
+        <button class="primary-btn" @click="goToAssessments">
+          View requests
+        </button>
+        <button class="link-btn mt-3" @click="goToDashboard">
+          Back to dashboard
+        </button>
+      </section>
+
       <template v-else>
         <!-- HEADER -->
         <div class="head">
@@ -67,7 +85,6 @@
             :disabled="saving"
             @click="chosenId = s.id"
           >
-            <!-- TOP BADGE -->
             <div v-if="i === 0" class="sug-badge">
               <v-icon x-small color="white">mdi-star</v-icon>
               Top match
@@ -124,7 +141,7 @@
             <span v-if="!saving">Confirm choice</span>
             <span v-else class="loading-row">
               <v-progress-circular indeterminate size="16" width="2" color="white" />
-              <span class="ml-2">Saving…</span>
+              <span class="ml-2">Assigning…</span>
             </span>
           </button>
         </div>
@@ -179,6 +196,10 @@ export default {
       showSuccess: false,
       successTitle: 'Request confirmed',
       successText: '',
+
+      alreadyRouted: false,
+      currentStatus: null,
+      assignedProfessionalName: null,
 
       requestId: null,
       suggestions: [],
@@ -252,12 +273,33 @@ export default {
     async load() {
       this.loading = true;
       this.loadError = '';
+      this.alreadyRouted = false;
+      this.error = '';
+
       try {
         const headers = await this.authHeader();
         if (!headers.Authorization) {
           return this.$router.replace('/login');
         }
 
+        // First, fetch the request itself to check its status
+        const requestRes = await axios.get(
+          `${API}/api/assessments/requests/${this.requestId}`,
+          { headers }
+        );
+
+        const request = requestRes.data?.data;
+        this.currentStatus = request?.status || null;
+        this.assignedProfessionalName = request?.assigned_professional_name || null;
+
+        // If the request isn't `submitted`, it's already been routed
+        if (this.currentStatus && this.currentStatus !== 'submitted') {
+          this.alreadyRouted = true;
+          this.loading = false;
+          return;
+        }
+
+        // Load suggestions for the still-submitted request
         const { data } = await axios.get(
           `${API}/api/assessments/requests/${this.requestId}/suggestions`,
           { headers }
@@ -267,17 +309,20 @@ export default {
         this.inferredType = data.inferred_type || null;
         this.countyUsed = data.county_used || null;
 
-        // Auto-select top match
         if (this.suggestions.length) this.chosenId = this.suggestions[0].id;
       } catch (err) {
         const status = err.response?.status;
+        const code = err.response?.data?.error;
+
         if (status === 401) return this.$router.replace('/login');
         if (status === 403) {
-          this.loadError = 'You don\'t have access to this request.';
+          this.loadError = "You don't have access to this request.";
         } else if (status === 404) {
           this.loadError = 'Request not found.';
+        } else if (code === 'request_already_routed') {
+          this.alreadyRouted = true;
         } else {
-          this.loadError = err.response?.data?.error || 'Could not load suggestions.';
+          this.loadError = code || 'Could not load suggestions.';
         }
       } finally {
         this.loading = false;
@@ -288,17 +333,22 @@ export default {
       if (!this.chosenId || this.saving) return;
       this.saving = true;
       this.error = '';
+
       try {
         const headers = await this.authHeader();
-        await axios.patch(
+        const { data } = await axios.patch(
           `${API}/api/assessments/requests/${this.requestId}/preferred`,
           { professional_id: this.chosenId },
           { headers }
         );
-        const chosen = this.suggestions.find((s) => s.id === this.chosenId);
-        this.successTitle = 'Choice saved';
-        this.successText =
-          `${chosen ? chosen.display_name : 'Your chosen professional'} will be contacted and will reach out soon.`;
+
+        const chosenName =
+          data?.professional_name ||
+          this.suggestions.find((s) => s.id === this.chosenId)?.display_name ||
+          'Your chosen professional';
+
+        this.successTitle = 'Professional assigned';
+        this.successText = `${chosenName} is now your assigned professional. They'll review your request and reach out to schedule the assessment.`;
         this.showSuccess = true;
       } catch (err) {
         const code = err.response?.data?.error;
@@ -316,6 +366,7 @@ export default {
       if (this.saving) return;
       this.saving = true;
       this.error = '';
+
       try {
         const headers = await this.authHeader();
         await axios.patch(
@@ -416,7 +467,7 @@ export default {
 
 .error-card {
   background: #fff; border-radius: 20px; padding: 40px 24px;
-  text-align: center; border: 1px solid #fdecea;
+  text-align: center; border: 1px solid var(--line);
   max-width: 520px; margin: 24px auto;
 }
 .error-icon {
