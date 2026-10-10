@@ -108,37 +108,11 @@
           </div>
         </button>
 
-        <!-- ADMIN -->
-        <button
-          v-if="user && user.role === 'admin'"
-          class="role-card"
-          :class="{ active: chosenRole === 'admin', current: true }"
-          role="radio"
-          :aria-checked="chosenRole === 'admin'"
-          :disabled="saving"
-          @click="selectRole('admin')"
-          @keydown.enter.prevent="selectRole('admin')"
-          @keydown.space.prevent="selectRole('admin')"
-        >
-          <div class="role-icon gradient-pink">
-            <v-icon small color="white">mdi-shield-account-outline</v-icon>
-          </div>
-          <div class="role-text">
-            <div class="role-title">
-              Admin dashboard
-              <span class="current-chip">Current</span>
-            </div>
-            <div class="role-sub">Verify professionals, route assessments, manage users.</div>
-            <div class="role-bullets">
-              <span class="bullet"><v-icon x-small color="#c2185b">mdi-check</v-icon>Verifications</span>
-              <span class="bullet"><v-icon x-small color="#c2185b">mdi-check</v-icon>Assessments</span>
-              <span class="bullet"><v-icon x-small color="#c2185b">mdi-check</v-icon>Users</span>
-            </div>
-          </div>
-          <div class="role-check" :class="{ on: chosenRole === 'admin' }">
-            <v-icon x-small color="white">mdi-check</v-icon>
-          </div>
-        </button>
+        <!--
+          Admin card intentionally removed.
+          Admins are auto-redirected to /dashboard/admin in load()
+          and cannot be created through register-first.
+        -->
       </div>
 
       <!-- ERROR -->
@@ -174,7 +148,7 @@ const ROLE_ROUTES = {
   parent:       '/dashboard/parent',
   professional: '/dashboard/professional',
   admin:        '/dashboard/admin',
-  org_admin:    '/dashboard/organisation'
+  org_admin:    '/dashboard/admin'
 };
 
 const ROLE_LABELS = {
@@ -190,11 +164,12 @@ export default {
 
   data() {
     return {
-      stage: 'loading', // 'loading' | 'ready' | 'error'
+      stage: 'loading',
       error: '',
       chosenRole: '',
       saving: false,
-      user: null
+      user: null,
+      _redirected: false
     };
   },
 
@@ -237,6 +212,7 @@ export default {
   },
 
   mounted() {
+    if (this._redirected) return;
     this.load();
     window.addEventListener('keydown', this.onKeydown);
   },
@@ -249,7 +225,6 @@ export default {
     onKeydown(e) {
       if (this.stage !== 'ready') return;
       if (e.key === 'Enter' && this.chosenRole && !this.saving) {
-        // Only trigger if not focused on an input
         const tag = (document.activeElement?.tagName || '').toLowerCase();
         if (tag !== 'input' && tag !== 'textarea') {
           e.preventDefault();
@@ -280,6 +255,14 @@ export default {
       return ROLE_LABELS[role] || role || '';
     },
 
+    safeNext(fallback) {
+      const next = this.$route.query.next;
+      if (typeof next !== 'string') return fallback;
+      if (!next.startsWith('/')) return fallback;
+      if (next.startsWith('//')) return fallback;
+      return next;
+    },
+
     async load() {
       this.stage = 'loading';
       this.error = '';
@@ -291,34 +274,55 @@ export default {
           return this.$router.replace('/login');
         }
 
-        const { data } = await axios.get(`${API}/api/auth/me`, { headers });
+        const { data } = await axios.get(`${API}/api/users/me`, { headers });
 
-        // New user — no row yet
+        // ── No DB row yet ──
         if (data.needs_role) {
           this.user = null;
-          // Pre-select based on last choice, if any
           const last = this.readLastRole();
           this.chosenRole = last || '';
           this.stage = 'ready';
           return;
         }
 
-        // Existing user
+        // ── Existing user ──
         this.user = data.data;
-        this.chosenRole = data.data.role;
+
+        // Admin → straight to admin dashboard, no picker
+        if (this.user.role === 'admin') {
+          this.writeLastRole('admin');
+          this._redirected = true;
+          const target = this.safeNext('/dashboard/admin');
+          this.$router.replace(target).catch(() => {});
+          return;
+        }
+
+        // Org admin → their dashboard
+        if (this.user.role === 'org_admin') {
+          this.writeLastRole('org_admin');
+          this._redirected = true;
+          this.$router.replace('/dashboard/organisation').catch(() => {});
+          return;
+        }
+
+        this.chosenRole = this.user.role;
         this.stage = 'ready';
       } catch (err) {
         const status = err.response?.status;
+        const code = err.response?.data?.error;
+
         if (status === 401) {
           return this.$router.replace('/login');
         }
-        if (status === 403) {
+        if (code === 'account_not_active') {
           this.error = 'Your account is not active. Contact support.';
+        } else if (status === 403) {
+          this.error = 'Access denied.';
         } else {
           this.error = 'Network error. Check your connection.';
         }
         this.stage = 'error';
-        console.error('[dashboard picker]', status, err.response?.data);
+        console.error('[dashboard picker]', status, code, err.response?.data);
       }
     },
 
@@ -331,10 +335,9 @@ export default {
     async continueTo() {
       if (!this.chosenRole || this.saving) return;
 
-      // Remember choice locally (used as a pre-select next time)
       this.writeLastRole(this.chosenRole);
 
-      // Existing user with the same role → just navigate
+      // Existing user with same role → just navigate
       if (this.user && this.user.role === this.chosenRole) {
         this.goTo(this.chosenRole);
         return;
@@ -357,8 +360,7 @@ export default {
             role: this.chosenRole,
             display_name: fbUser.displayName || null,
             email: fbUser.email || null,
-            phone: fbUser.phoneNumber || null,
-            firebase_uid: fbUser.uid
+            phone: fbUser.phoneNumber || null
           },
           { headers: { Authorization: `Bearer ${token}` } }
         );
@@ -366,10 +368,18 @@ export default {
         this.goTo(this.chosenRole);
       } catch (err) {
         const status = err.response?.status;
+        const code = err.response?.data?.error;
+
         if (status === 401) {
           return this.$router.replace('/login');
         }
-        this.error = err.response?.data?.error || 'Could not save your choice. Try again.';
+        if (code === 'role_locked') {
+          this.error = 'This account cannot change role. Contact support.';
+        } else if (code === 'invalid_role') {
+          this.error = 'That role is not available.';
+        } else {
+          this.error = err.response?.data?.error || 'Could not save your choice. Try again.';
+        }
       } finally {
         this.saving = false;
       }
@@ -406,7 +416,6 @@ export default {
   }
 };
 </script>
-
 <style scoped>
 .redirect-page {
   min-height: 100vh;

@@ -3,7 +3,6 @@
     <!-- LEFT: FORM -->
     <div class="form-side">
       <div class="form-wrap">
-        <!-- Brand -->
         <nuxt-link to="/" class="brand">
           <span class="brand-mark"><v-icon small color="white">mdi-bridge</v-icon></span>
           <span class="brand-name">No<span class="brand-dot">va</span></span>
@@ -47,7 +46,6 @@
           </button>
         </div>
 
-        <!-- FORM -->
         <form @submit.prevent="submit" class="form" autocomplete="on">
           <label class="field-label">Email address</label>
           <input
@@ -92,6 +90,23 @@
               :disabled="loading"
             />
 
+            <!-- NEW: Phone number (parents only) -->
+            <template v-if="role === 'parent'">
+              <label class="field-label mt-4">Phone number</label>
+              <input
+                v-model.trim="phone"
+                type="tel"
+                inputmode="tel"
+                placeholder="+254 7XX XXX XXX"
+                autocomplete="tel"
+                class="text-input"
+                :disabled="loading"
+              />
+              <p class="hint mt-3">
+                We'll only use this for important account and session updates.
+              </p>
+            </template>
+
             <p class="hint mt-3">
               By creating an account you agree to our
               <nuxt-link to="/terms">Terms</nuxt-link>
@@ -127,7 +142,6 @@
           </p>
         </form>
 
-        <!-- TOGGLE SIGNUP/LOGIN -->
         <p class="toggle-mode">
           {{ isSignup ? 'Already have an account?' : "Don't have an account?" }}
           <button type="button" class="link-btn" :disabled="loading" @click="toggleMode">
@@ -135,7 +149,6 @@
           </button>
         </p>
 
-        <!-- TRUST FOOTER -->
         <div class="trust-line">
           <v-icon small color="#7f8c8d" class="mr-2">mdi-shield-lock-outline</v-icon>
           <span>Your data is encrypted and private.</span>
@@ -196,6 +209,7 @@ export default {
       email: '',
       password: '',
       displayName: '',
+      phone: '',
       showPassword: false,
 
       loading: false,
@@ -205,12 +219,27 @@ export default {
   },
 
   computed: {
+    // Basic sanity check: 7–20 chars of digits/+/-/space/parens
+    phoneValid() {
+      // Only required for parent signups
+      if (!this.isSignup || this.role !== 'parent') return true;
+      const v = (this.phone || '').trim();
+      if (!v) return false;
+      return /^[0-9+\-\s()]{7,20}$/.test(v);
+    },
+
     canSubmit() {
       const emailOk = this.email.includes('@') && this.email.includes('.');
       const passOk = this.password.length >= 6;
       if (!this.isSignup) return emailOk && passOk;
-      return emailOk && passOk && this.displayName.length >= 2;
+      return (
+        emailOk &&
+        passOk &&
+        this.displayName.length >= 2 &&
+        this.phoneValid
+      );
     },
+
     roleColor() {
       return this.role === 'professional'
         ? { color: '#e86a8a', bg: '#fce4ec', icon: 'mdi-stethoscope' }
@@ -266,6 +295,10 @@ export default {
     setRole(r) {
       this.role = r;
       this.error = '';
+      // Clear the phone if switching away from parent so we don't send stale data
+      if (r !== 'parent') {
+        this.phone = '';
+      }
     },
 
     toggleMode() {
@@ -296,7 +329,6 @@ export default {
             try {
               await user.updateProfile({ displayName: this.displayName });
             } catch (profileErr) {
-              // Non-fatal — the backend will use `display_name` from the request body
               console.warn('[updateProfile]', profileErr.message);
             }
           }
@@ -334,19 +366,32 @@ export default {
 
     /**
      * After Firebase auth succeeds:
-     * 1. Try /api/auth/provision (works if the user row already exists).
-     * 2. If 403 (no row), call /api/auth/register-first.
-     * 3. If that also fails, fall through — /api/auth/me auto-provisions.
-     * 4. Redirect to /dashboard for role-based routing.
+     * 1. Try /api/auth/provision (existing user row).
+     * 2. If 403, fall through to /api/auth/register-first.
+     * 3. Route by role:
+     *    - New professional signup → /onboarding/professional
+     *    - Everyone else            → /dashboard
      */
     async afterAuth(user) {
+      const wasSignup = this.isSignup;
+      const signupRole = this.role;
+
+      // Normalise the phone (keep + and digits, drop formatting)
+      const normalizedPhone = (() => {
+        if (signupRole !== 'parent') return null;
+        const raw = (this.phone || '').trim();
+        if (!raw) return null;
+        return raw.replace(/[^\d+]/g, '');
+      })();
+
       try {
         const token = await user.getIdToken();
         const authHeader = { Authorization: `Bearer ${token}` };
         const payload = {
-          role: this.role,
+          role: signupRole,
           display_name: user.displayName || this.displayName || null,
-          email: user.email || this.email || null
+          email: user.email || this.email || null,
+          phone: normalizedPhone
         };
 
         let provisioned = false;
@@ -358,10 +403,8 @@ export default {
         } catch (provErr) {
           const status = provErr.response?.status;
           if (status === 403) {
-            // 403 => no user row yet; fall through to register-first
             provisioned = false;
           } else {
-            // Any other error — log and continue to the fallback
             console.warn('[provision]', provErr.response?.data || provErr.message);
           }
         }
@@ -373,24 +416,31 @@ export default {
               `${API}/api/auth/register-first`,
               {
                 firebase_uid: user.uid,
-                role: this.role,
+                role: signupRole,
                 display_name: user.displayName || this.displayName || null,
-                email: user.email || this.email || null
+                email: user.email || this.email || null,
+                phone: normalizedPhone
               },
               { headers: authHeader }
             );
             provisioned = true;
           } catch (regErr) {
-            // Not fatal — the auth middleware on /api/auth/me auto-provisions
             console.warn('[register-first]', regErr.response?.data || regErr.message);
           }
         }
 
-        // 3) Route to /dashboard — the redirector reads role from backend
-        this.safePush('/dashboard');
+        // 3) Route by role
+        //    Only send NEW professional signups to onboarding.
+        //    Returning professionals go through the picker, which will
+        //    send them to onboarding if their profile is incomplete.
+        if (wasSignup && signupRole === 'professional') {
+          this.safePush('/onboarding/professional');
+        } else {
+          this.safePush('/dashboard');
+        }
       } catch (err) {
         console.error('[afterAuth]', err);
-        // Fallback: still attempt the redirector — it will re-read role from backend
+        // Fallback: still attempt the redirector — it re-reads role from backend
         this.safePush('/dashboard');
       }
     },
@@ -456,9 +506,7 @@ export default {
   .login-page { grid-template-columns: 1.1fr 0.9fr; }
 }
 
-/* ============================================================
-   FORM SIDE
-   ============================================================ */
+/* FORM SIDE */
 .form-side {
   display: flex;
   align-items: center;
@@ -505,7 +553,6 @@ export default {
   line-height: 1.55;
 }
 
-/* ROLE TOGGLE */
 .role-toggle {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -543,7 +590,6 @@ export default {
 }
 .role-btn:disabled { opacity: 0.6; cursor: not-allowed; }
 
-/* FORM */
 .form { display: flex; flex-direction: column; }
 .field-label {
   font-size: 0.82rem;
@@ -572,7 +618,6 @@ export default {
 }
 .text-input:disabled { background: #f7f8fb; cursor: not-allowed; }
 
-/* Password */
 .password-wrap { position: relative; }
 .password-wrap .text-input { padding-right: 48px; }
 .password-toggle {
@@ -590,7 +635,6 @@ export default {
 }
 .password-toggle:hover { background: #f3f7fb; }
 
-/* Hints / errors */
 .hint {
   font-size: 0.82rem;
   color: #7f8c8d;
@@ -631,7 +675,6 @@ export default {
 .error-box { background: #fdecea; color: #c0392b; }
 .success-box { background: #e6f9ee; color: #229954; }
 
-/* Submit */
 .submit-btn {
   margin-top: 24px;
   width: 100%;
@@ -681,9 +724,7 @@ export default {
   font-weight: 500;
 }
 
-/* ============================================================
-   VISUAL SIDE
-   ============================================================ */
+/* VISUAL SIDE */
 .visual-side {
   display: none;
   position: relative;
@@ -778,9 +819,6 @@ export default {
   margin: 0;
 }
 
-/* ============================================================
-   RESPONSIVE
-   ============================================================ */
 @media (max-width: 599px) {
   .form-side { padding: 28px 20px 48px; }
   .title { font-size: 1.6rem; }

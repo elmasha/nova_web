@@ -203,7 +203,7 @@
             <div v-else class="list">
               <div
                 v-for="v in filteredVerifications"
-                :key="v.id"
+                :key="v.professional_id"
                 class="list-row"
                 @click="openVerification(v)"
               >
@@ -216,6 +216,8 @@
                   <div class="row-meta">
                     <span>{{ v.years_experience || 0 }} yrs</span>
                     <span v-if="v.email"> · {{ v.email }}</span>
+                    <span v-if="hasAnyDoc(v)" class="doc-flag"> · docs ready</span>
+                    <span v-else class="doc-flag muted"> · no docs</span>
                   </div>
                 </div>
                 <span class="status-pill" :class="statusClass(v.status)">{{ v.status }}</span>
@@ -351,119 +353,6 @@
       </transition>
     </main>
 
-    <!-- VERIFICATION DETAIL MODAL -->
-    <transition name="modal">
-      <div v-if="selectedVerification" class="modal-backdrop" @click.self="closeVerification">
-        <div class="modal modal-lg">
-          <div class="modal-head">
-            <div class="modal-title">Verification · {{ selectedVerification.display_name }}</div>
-            <button class="modal-close" @click="closeVerification">
-              <v-icon small color="#7f8c8d">mdi-close</v-icon>
-            </button>
-          </div>
-
-          <div class="modal-body">
-            <div class="modal-row">
-              <div class="modal-label">Type</div>
-              <div class="modal-value">{{ typeLabel(selectedVerification.type) }}</div>
-            </div>
-            <div class="modal-row">
-              <div class="modal-label">Experience</div>
-              <div class="modal-value">{{ selectedVerification.years_experience || 0 }} years</div>
-            </div>
-            <div class="modal-row">
-              <div class="modal-label">County</div>
-              <div class="modal-value">
-                {{ selectedVerification.county || '—' }}
-                <span v-if="selectedVerification.area">, {{ selectedVerification.area }}</span>
-              </div>
-            </div>
-            <div class="modal-row" v-if="selectedVerification.price_min || selectedVerification.price_max">
-              <div class="modal-label">Price range</div>
-              <div class="modal-value">
-                KSh {{ formatPrice(selectedVerification.price_min) }} – {{ formatPrice(selectedVerification.price_max) }}
-              </div>
-            </div>
-            <div class="modal-row">
-              <div class="modal-label">Online</div>
-              <div class="modal-value">{{ selectedVerification.online ? 'Yes' : 'No' }}</div>
-            </div>
-            <div v-if="selectedVerification.bio" class="modal-row">
-              <div class="modal-label">Bio</div>
-              <div class="modal-value">{{ selectedVerification.bio }}</div>
-            </div>
-
-            <div class="section-title-sm mt-4">Documents</div>
-
-            <div v-if="selectedVerification.id_doc_url" class="doc-row">
-              <v-icon small color="#4a3b8c" class="mr-2">mdi-card-account-details-outline</v-icon>
-              <div class="doc-body">
-                <div class="doc-label">National ID / Passport</div>
-                <a :href="selectedVerification.id_doc_url" target="_blank" rel="noopener" class="doc-link">
-                  Open document
-                </a>
-              </div>
-            </div>
-            <div v-if="selectedVerification.qualification_doc_url" class="doc-row">
-              <v-icon small color="#4a3b8c" class="mr-2">mdi-school-outline</v-icon>
-              <div class="doc-body">
-                <div class="doc-label">Qualification</div>
-                <a :href="selectedVerification.qualification_doc_url" target="_blank" rel="noopener" class="doc-link">
-                  Open document
-                </a>
-              </div>
-            </div>
-            <div v-if="selectedVerification.licence_doc_url" class="doc-row">
-              <v-icon small color="#4a3b8c" class="mr-2">mdi-certificate-outline</v-icon>
-              <div class="doc-body">
-                <div class="doc-label">Practising licence</div>
-                <a :href="selectedVerification.licence_doc_url" target="_blank" rel="noopener" class="doc-link">
-                  Open document
-                </a>
-              </div>
-            </div>
-
-            <div v-if="verificationError" class="error-box mt-4">{{ verificationError }}</div>
-
-            <div v-if="rejectMode" class="reject-box mt-4">
-              <label class="field-label">Reason for rejection</label>
-              <textarea
-                v-model.trim="rejectNotes"
-                rows="3"
-                class="text-input textarea"
-                placeholder="Explain what needs fixing so the professional can resubmit."
-                :disabled="acting"
-              ></textarea>
-            </div>
-          </div>
-
-          <div class="modal-actions">
-            <template v-if="selectedVerification.status === 'pending'">
-              <template v-if="!rejectMode">
-                <button class="btn-danger" :disabled="acting" @click="rejectMode = true">Reject</button>
-                <button class="btn-primary" :disabled="acting" @click="approveVerification">
-                  {{ acting ? 'Approving…' : 'Approve' }}
-                </button>
-              </template>
-              <template v-else>
-                <button class="btn-secondary" :disabled="acting" @click="rejectMode = false">Back</button>
-                <button
-                  class="btn-danger"
-                  :disabled="acting || rejectNotes.length < 5"
-                  @click="submitReject"
-                >
-                  {{ acting ? 'Rejecting…' : 'Confirm rejection' }}
-                </button>
-              </template>
-            </template>
-            <template v-else>
-              <button class="btn-secondary" @click="closeVerification">Close</button>
-            </template>
-          </div>
-        </div>
-      </div>
-    </transition>
-
     <!-- ASSESSMENT ASSIGN MODAL -->
     <transition name="modal">
       <div v-if="selectedAssessment" class="modal-backdrop" @click.self="closeAssessment">
@@ -577,7 +466,7 @@ const API = process.env.API_BASE_URL || 'https://novaserver-production-b5fd.up.r
 
 export default {
   name: 'AdminDashboard',
-  middleware: 'auth',
+  middleware: ['auth', 'admin'],
 
   data() {
     return {
@@ -614,10 +503,6 @@ export default {
       ],
       verificationSearch: '',
       verifications: [],
-      selectedVerification: null,
-      rejectMode: false,
-      rejectNotes: '',
-      verificationError: '',
 
       // Assessments
       assessmentFilter: 'submitted',
@@ -683,8 +568,15 @@ export default {
     },
     filteredUsers() {
       const q = this.userSearch.toLowerCase();
-      if (!q) return this.users;
-      return this.users.filter((u) =>
+      let list = this.users;
+
+      // Fallback client-side filter — harmless if backend already filtered
+      if (this.userFilter === 'suspended') list = list.filter((u) => u.status === 'suspended');
+      if (this.userFilter === 'parent')    list = list.filter((u) => u.role === 'parent');
+      if (this.userFilter === 'professional') list = list.filter((u) => u.role === 'professional');
+
+      if (!q) return list;
+      return list.filter((u) =>
         [u.display_name, u.email, u.phone, u.role]
           .filter(Boolean)
           .some((x) => String(x).toLowerCase().includes(q))
@@ -707,9 +599,7 @@ export default {
   },
 
   methods: {
-    onScroll() {
-      this.scrolled = window.scrollY > 4;
-    },
+    onScroll() { this.scrolled = window.scrollY > 4; },
 
     toast(message, type = 'success', icon = 'mdi-check-circle-outline') {
       const id = Date.now() + Math.random();
@@ -740,7 +630,11 @@ export default {
     setTab(tab) {
       this.menuOpen = false;
       this.activeTab = tab;
-      this.$router.replace({ path: '/dashboard/admin', query: { tab } }).catch(() => {});
+      if (tab === 'home') {
+        this.$router.replace({ path: '/dashboard/admin' }).catch(() => {});
+      } else {
+        this.$router.replace({ path: '/dashboard/admin', query: { tab } }).catch(() => {});
+      }
 
       if (tab === 'verifications') this.loadVerifications();
       else if (tab === 'assessments') {
@@ -754,11 +648,7 @@ export default {
       this.loadError = '';
       try {
         const headers = await this.authHeader();
-        if (!headers.Authorization) {
-          this.loadError = 'You are not signed in.';
-          this.loading = false;
-          return;
-        }
+        if (!headers.Authorization) return this.$router.replace('/login/admin');
 
         const [meRes, statsRes] = await Promise.all([
           axios.get(`${API}/api/users/me`, { headers }),
@@ -766,6 +656,14 @@ export default {
         ]);
 
         this.user = meRes.data?.data || null;
+
+        if (!this.user || this.user.role !== 'admin') {
+          this.loadError = 'Admin access required.';
+          this.loading = false;
+          setTimeout(() => this.$router.replace('/login/admin'), 1500);
+          return;
+        }
+
         this.stats = statsRes.data?.data || this.stats;
 
         if (this.activeTab === 'verifications') await this.loadVerifications();
@@ -775,11 +673,15 @@ export default {
         } else if (this.activeTab === 'users') await this.loadUsers();
       } catch (err) {
         const status = err.response?.status;
-        if (status === 401) {
-          this.loadError = 'Your session expired. Please sign in again.';
-          setTimeout(() => this.$router.push('/login'), 1500);
+        const code = err.response?.data?.error;
+        if (status === 401 || code === 'account_not_active') {
+          this.loadError = code === 'account_not_active'
+            ? 'Your account is not active.'
+            : 'Your session expired.';
+          setTimeout(() => this.$router.replace('/login/admin'), 1500);
         } else if (status === 403) {
           this.loadError = 'Admin access required.';
+          setTimeout(() => this.$router.replace('/login/admin'), 1500);
         } else {
           this.loadError = 'Could not load admin dashboard.';
         }
@@ -794,7 +696,7 @@ export default {
       try {
         const headers = await this.authHeader();
         const { data } = await axios.get(
-          `${API}/api/admin/verifications?status=${this.verificationFilter}`,
+          `${API}/api/admin/professionals?status=${this.verificationFilter}`,
           { headers }
         );
         this.verifications = data.data || [];
@@ -804,61 +706,13 @@ export default {
     },
 
     openVerification(v) {
-      this.selectedVerification = v;
-      this.rejectMode = false;
-      this.rejectNotes = '';
-      this.verificationError = '';
+      const id = v.professional_id || v.id;
+      if (!id) return;
+      this.$router.push(`/dashboard/admin/verifications/${id}`).catch(() => {});
     },
 
-    closeVerification() {
-      this.selectedVerification = null;
-      this.rejectMode = false;
-      this.rejectNotes = '';
-      this.verificationError = '';
-    },
-
-    async approveVerification() {
-      if (!this.selectedVerification || this.acting) return;
-      this.acting = true;
-      this.verificationError = '';
-      try {
-        const headers = await this.authHeader();
-        await axios.post(
-          `${API}/api/admin/verifications/${this.selectedVerification.id}/approve`,
-          {},
-          { headers }
-        );
-        this.toast('Professional approved');
-        this.closeVerification();
-        await this.loadVerifications();
-        await this.reloadStats();
-      } catch (err) {
-        this.verificationError = err.response?.data?.error || 'Could not approve.';
-      } finally {
-        this.acting = false;
-      }
-    },
-
-    async submitReject() {
-      if (!this.selectedVerification || this.acting || this.rejectNotes.length < 5) return;
-      this.acting = true;
-      this.verificationError = '';
-      try {
-        const headers = await this.authHeader();
-        await axios.post(
-          `${API}/api/admin/verifications/${this.selectedVerification.id}/reject`,
-          { notes: this.rejectNotes },
-          { headers }
-        );
-        this.toast('Professional rejected', 'warn', 'mdi-alert-outline');
-        this.closeVerification();
-        await this.loadVerifications();
-        await this.reloadStats();
-      } catch (err) {
-        this.verificationError = err.response?.data?.error || 'Could not reject.';
-      } finally {
-        this.acting = false;
-      }
+    hasAnyDoc(v) {
+      return !!(v.id_doc_url || v.qualification_doc_url || v.licence_doc_url);
     },
 
     /* Assessments */
@@ -947,6 +801,7 @@ export default {
         loading: false,
         onConfirm: async () => {
           this.confirmDialog.loading = true;
+          this.userActing = u.id;
           try {
             const headers = await this.authHeader();
             const newStatus = isActive ? 'suspended' : 'active';
@@ -960,6 +815,7 @@ export default {
           } catch (err) {
             this.toast(err.response?.data?.error || 'Could not update user', 'error', 'mdi-alert-circle-outline');
           } finally {
+            this.userActing = null;
             this.confirmDialog = null;
           }
         }
@@ -971,7 +827,9 @@ export default {
         const headers = await this.authHeader();
         const { data } = await axios.get(`${API}/api/admin/stats`, { headers });
         this.stats = data.data || this.stats;
-      } catch (e) {}
+      } catch (e) {
+        console.warn('[admin] reload stats failed', e.message);
+      }
     },
 
     /* Helpers */
@@ -1032,7 +890,7 @@ export default {
         if (auth) await auth.signOut();
       } catch (e) {}
       try {
-        const r = this.$router.push('/login');
+        const r = this.$router.replace('/login/admin');
         if (r && typeof r.catch === 'function') r.catch(() => {});
       } catch (e) {}
     }
@@ -1041,28 +899,18 @@ export default {
 </script>
 
 <style scoped>
-/* ============ TOKENS ============ */
+/* Reuse your exact styles — unchanged */
 .admin-dashboard {
-  --purple: #4a3b8c;
-  --purple-2: #5b4b9e;
-  --teal: #56c2d9;
-  --teal-2: #7ec8e3;
-  --pink: #e86a8a;
-  --pink-2: #f48fb1;
-  --ink: #2c3e50;
-  --muted: #7f8c8d;
-  --line: #ececf1;
-  --bg: #f5f7fb;
-
-  min-height: 100vh;
-  background: var(--bg);
-  padding-bottom: 64px;
+  --purple: #4a3b8c; --purple-2: #5b4b9e;
+  --teal: #56c2d9; --teal-2: #7ec8e3;
+  --pink: #e86a8a; --pink-2: #f48fb1;
+  --ink: #2c3e50; --muted: #7f8c8d;
+  --line: #ececf1; --bg: #f5f7fb;
+  min-height: 100vh; background: var(--bg); padding-bottom: 64px;
 }
-
-/* ============ TOPBAR ============ */
 .topbar {
   position: sticky; top: 0; z-index: 40;
-  background: rgba(255, 255, 255, 0.92);
+  background: rgba(255,255,255,0.92);
   backdrop-filter: saturate(160%) blur(10px);
   -webkit-backdrop-filter: saturate(160%) blur(10px);
   border-bottom: 1px solid transparent;
@@ -1070,24 +918,18 @@ export default {
   display: flex; align-items: center; justify-content: space-between;
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
-.topbar.scrolled {
-  border-bottom-color: var(--line);
-  box-shadow: 0 8px 24px -18px rgba(44, 62, 80, 0.25);
-}
+.topbar.scrolled { border-bottom-color: var(--line); box-shadow: 0 8px 24px -18px rgba(44,62,80,0.25); }
 @media (min-width: 768px) { .topbar { padding: 0 32px; } }
-
 .brand { display: inline-flex; align-items: center; gap: 10px; text-decoration: none; }
 .brand-mark {
   width: 34px; height: 34px; border-radius: 10px;
   background: linear-gradient(135deg, var(--purple), var(--teal));
   display: grid; place-items: center;
-  box-shadow: 0 6px 14px -6px rgba(74, 59, 140, 0.55);
+  box-shadow: 0 6px 14px -6px rgba(74,59,140,0.55);
 }
 .brand-name { font-size: 16px; font-weight: 800; color: var(--ink); letter-spacing: -0.02em; }
 .brand-dot { color: var(--pink); }
-
 .topbar-actions { display: flex; align-items: center; gap: 8px; }
-
 .icon-btn {
   width: 36px; height: 36px; border-radius: 10px; background: #f3f7fb;
   border: none; display: grid; place-items: center; cursor: pointer;
@@ -1097,22 +939,20 @@ export default {
 .icon-btn:active { transform: scale(0.95); }
 .spinning { animation: spin 0.9s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
-
 .user-menu-wrap { position: relative; }
 .user-avatar {
   width: 38px; height: 38px; border-radius: 50%;
   background: linear-gradient(135deg, var(--purple), var(--teal-2));
   color: #fff; border: 2px solid #fff; font-weight: 800; font-size: 13px;
   cursor: pointer; letter-spacing: 0.3px;
-  box-shadow: 0 6px 14px -6px rgba(74, 59, 140, 0.55);
+  box-shadow: 0 6px 14px -6px rgba(74,59,140,0.55);
   transition: transform 0.15s ease;
 }
 .user-avatar:hover { transform: translateY(-1px); }
-
 .user-menu {
   position: absolute; top: calc(100% + 8px); right: 0; min-width: 230px;
   background: #fff; border: 1px solid var(--line); border-radius: 16px;
-  box-shadow: 0 24px 48px -16px rgba(44, 62, 80, 0.25);
+  box-shadow: 0 24px 48px -16px rgba(44,62,80,0.25);
   overflow: hidden; z-index: 50;
 }
 .user-menu-head { padding: 16px; border-bottom: 1px solid #f0f0f5; }
@@ -1132,11 +972,9 @@ export default {
 }
 .user-menu-item.danger { color: #e74c3c; }
 .user-menu-item:hover { background: #f9fafc; }
-
-/* ============ TABS ============ */
 .tabs {
   position: sticky; top: 64px; z-index: 30;
-  background: rgba(255, 255, 255, 0.92);
+  background: rgba(255,255,255,0.92);
   backdrop-filter: saturate(160%) blur(10px);
   -webkit-backdrop-filter: saturate(160%) blur(10px);
   border-bottom: 1px solid var(--line);
@@ -1160,16 +998,11 @@ export default {
   font-size: 0.62rem; font-weight: 800; margin-left: 4px;
 }
 .tab:not(.active) .tab-badge { background: #ede7f8; color: var(--purple); }
-
-/* ============ MAIN ============ */
 .main { max-width: 980px; margin: 0 auto; padding: 24px 16px; }
 @media (min-width: 768px) { .main { padding: 32px; } }
-
 .greeting { margin-bottom: 20px; }
 .greeting h1 { font-size: 1.65rem; font-weight: 800; letter-spacing: -0.02em; color: var(--ink); margin: 0 0 6px; }
 .greeting p { font-size: 0.95rem; color: var(--muted); margin: 0; }
-
-/* ============ SKELETON ============ */
 .skeleton-wrap { padding-top: 4px; }
 .sk-greeting { margin-bottom: 20px; }
 .sk-line {
@@ -1189,8 +1022,6 @@ export default {
 .sk-label { width: 60%; height: 10px; margin-bottom: 8px; }
 .sk-value { width: 40%; height: 16px; }
 @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
-
-/* ============ ERROR ============ */
 .error-card {
   background: #fff; border-radius: 20px; padding: 40px 24px;
   text-align: center; border: 1px solid #fdecea;
@@ -1199,11 +1030,8 @@ export default {
 .error-icon { width: 84px; height: 84px; border-radius: 50%; background: #fdecea; display: grid; place-items: center; margin: 0 auto 20px; }
 .error-card h2 { font-size: 1.2rem; font-weight: 800; color: var(--ink); margin: 0 0 10px; }
 .error-card p { font-size: 0.9rem; color: var(--muted); line-height: 1.6; margin: 0 0 24px; }
-
-/* ============ STATS ============ */
 .stats-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-bottom: 32px; }
 @media (min-width: 640px) { .stats-grid { grid-template-columns: repeat(3, 1fr); } }
-
 .stat-card {
   display: flex; align-items: center; gap: 12px;
   background: #fff; border: 1px solid var(--line);
@@ -1213,30 +1041,26 @@ export default {
 }
 .stat-card::before {
   content: ''; position: absolute; inset: 0;
-  background: linear-gradient(135deg, transparent, rgba(74, 59, 140, 0.04));
+  background: linear-gradient(135deg, transparent, rgba(74,59,140,0.04));
   opacity: 0; transition: opacity 0.2s ease; pointer-events: none;
 }
-.stat-card:hover { transform: translateY(-2px); box-shadow: 0 18px 32px -20px rgba(74, 59, 140, 0.35); border-color: #d9d2ec; }
+.stat-card:hover { transform: translateY(-2px); box-shadow: 0 18px 32px -20px rgba(74,59,140,0.35); border-color: #d9d2ec; }
 .stat-card:hover::before { opacity: 1; }
 .stat-icon {
   width: 42px; height: 42px; border-radius: 12px; display: grid; place-items: center; flex: 0 0 auto;
-  box-shadow: 0 8px 18px -10px rgba(74, 59, 140, 0.5);
+  box-shadow: 0 8px 18px -10px rgba(74,59,140,0.5);
 }
 .stat-body { flex: 1; min-width: 0; }
 .stat-label { font-size: 0.68rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 3px; }
 .stat-value { font-size: 1.5rem; font-weight: 900; color: var(--ink); line-height: 1; font-variant-numeric: tabular-nums; }
-
 .gradient-purple .stat-icon { background: linear-gradient(135deg, #4a3b8c, #5b4b9e); }
 .gradient-pink   .stat-icon { background: linear-gradient(135deg, #e86a8a, #f48fb1); }
 .gradient-green  .stat-icon { background: linear-gradient(135deg, #229954, #2ecc71); }
 .gradient-teal   .stat-icon { background: linear-gradient(135deg, #3a9fb8, #7ec8e3); }
 .gradient-indigo .stat-icon { background: linear-gradient(135deg, #4a3b8c, #7ec8e3); }
 .gradient-amber  .stat-icon { background: linear-gradient(135deg, #b7791f, #f39c12); }
-
-/* ============ TOOLBAR ============ */
 .list-toolbar { display: grid; gap: 10px; margin-bottom: 16px; }
 @media (min-width: 640px) { .list-toolbar { grid-template-columns: 1fr 260px; align-items: center; } }
-
 .sub-tabs {
   display: flex; gap: 4px; background: #fff;
   border: 1px solid var(--line); border-radius: 12px;
@@ -1250,15 +1074,14 @@ export default {
   white-space: nowrap; transition: all 0.15s ease;
 }
 .sub-tab:hover { color: var(--purple); }
-.sub-tab.active { background: var(--purple); color: #fff; box-shadow: 0 6px 14px -8px rgba(74, 59, 140, 0.6); }
-
+.sub-tab.active { background: var(--purple); color: #fff; box-shadow: 0 6px 14px -8px rgba(74,59,140,0.6); }
 .search {
   position: relative; display: flex; align-items: center;
   background: #fff; border: 1px solid var(--line); border-radius: 12px;
   padding: 0 12px; height: 42px;
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
-.search:focus-within { border-color: var(--purple); box-shadow: 0 0 0 3px rgba(74, 59, 140, 0.1); }
+.search:focus-within { border-color: var(--purple); box-shadow: 0 0 0 3px rgba(74,59,140,0.1); }
 .search-icon { margin-right: 8px; flex: 0 0 auto; }
 .search input {
   flex: 1; border: none; outline: none; background: transparent;
@@ -1266,8 +1089,6 @@ export default {
   min-width: 0;
 }
 .search input::placeholder { color: #aab3bd; }
-
-/* ============ EMPTY ============ */
 .mini-empty {
   display: flex; align-items: center; padding: 24px;
   background: #fff; border: 1px dashed #d4dae4;
@@ -1275,8 +1096,6 @@ export default {
 }
 .empty-title { font-size: 0.9rem; font-weight: 800; color: var(--ink); }
 .empty-sub { font-size: 0.78rem; color: var(--muted); margin-top: 2px; }
-
-/* ============ LIST ============ */
 .list { display: grid; gap: 10px; }
 .list-row {
   display: flex; align-items: center; gap: 14px;
@@ -1284,25 +1103,26 @@ export default {
   border-radius: 16px; padding: 14px 16px;
   cursor: pointer; transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
 }
-.list-row:hover { border-color: #d9d2ec; transform: translateY(-1px); box-shadow: 0 16px 28px -20px rgba(74, 59, 140, 0.35); }
+.list-row:hover { border-color: #d9d2ec; transform: translateY(-1px); box-shadow: 0 16px 28px -20px rgba(74,59,140,0.35); }
 .row-avatar {
   width: 46px; height: 46px; border-radius: 14px;
   color: #fff; display: grid; place-items: center;
   font-weight: 800; font-size: 14px; flex: 0 0 auto;
   letter-spacing: 0.3px;
-  box-shadow: 0 8px 18px -10px rgba(74, 59, 140, 0.5);
+  box-shadow: 0 8px 18px -10px rgba(74,59,140,0.5);
 }
 .row-avatar-purple { background: linear-gradient(135deg, #4a3b8c, #5b4b9e); }
 .row-body { flex: 1; min-width: 0; }
 .row-title { font-size: 0.94rem; font-weight: 800; color: var(--ink); margin-bottom: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .row-sub { font-size: 0.78rem; color: var(--muted); margin-bottom: 3px; }
 .row-meta { font-size: 0.72rem; color: #95a5a6; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.doc-flag { color: #229954; font-weight: 700; }
+.doc-flag.muted { color: #b7791f; }
 .role-chip {
   display: inline-block; font-size: 0.62rem; font-weight: 800; letter-spacing: 0.4px;
   text-transform: uppercase; padding: 2px 8px; border-radius: 999px;
   background: #ede7f8; color: var(--purple);
 }
-
 .status-pill {
   display: inline-flex; align-items: center;
   font-size: 0.64rem; font-weight: 800; padding: 5px 10px;
@@ -1313,7 +1133,6 @@ export default {
 .status-amber { background: #fef3e0; color: #b7791f; }
 .status-red   { background: #fdecea; color: #c0392b; }
 .status-grey  { background: #ececf1; color: #7f8c8d; }
-
 .row-action {
   padding: 8px 14px; border-radius: 10px; border: 1.5px solid #e0e4eb;
   background: #fff; color: var(--ink);
@@ -1323,17 +1142,15 @@ export default {
 .row-action.danger:hover { border-color: #e74c3c; color: #e74c3c; background: #fdecea; }
 .row-action.success:hover { border-color: #229954; color: #229954; background: #e6f9ee; }
 .row-action:disabled { opacity: 0.55; cursor: not-allowed; }
-
-/* ============ BUTTONS ============ */
 .primary-btn {
   display: inline-flex; align-items: center; justify-content: center;
   padding: 12px 22px; border-radius: 12px; border: none;
   background: linear-gradient(135deg, var(--purple), var(--purple-2));
   color: #fff; font-size: 0.9rem; font-weight: 700; cursor: pointer;
-  font-family: inherit; box-shadow: 0 12px 24px -12px rgba(74, 59, 140, 0.7);
+  font-family: inherit; box-shadow: 0 12px 24px -12px rgba(74,59,140,0.7);
   transition: transform 0.15s ease, box-shadow 0.15s ease;
 }
-.primary-btn:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 16px 28px -14px rgba(74, 59, 140, 0.8); }
+.primary-btn:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 16px 28px -14px rgba(74,59,140,0.8); }
 .primary-btn:disabled { opacity: 0.55; cursor: not-allowed; }
 .btn-secondary {
   padding: 11px 18px; border-radius: 12px; border: 1.5px solid #e0e4eb;
@@ -1347,15 +1164,13 @@ export default {
   padding: 11px 18px; border-radius: 12px; border: none;
   background: linear-gradient(135deg, #e74c3c, #c0392b); color: #fff;
   font-size: 0.88rem; font-weight: 700; cursor: pointer; font-family: inherit;
-  box-shadow: 0 10px 22px -12px rgba(231, 76, 60, 0.7);
+  box-shadow: 0 10px 22px -12px rgba(231,76,60,0.7);
   transition: transform 0.15s ease, box-shadow 0.15s ease;
 }
 .btn-danger:hover:not(:disabled) { transform: translateY(-1px); }
 .btn-danger:disabled { opacity: 0.55; cursor: not-allowed; }
-
-/* ============ MODAL ============ */
 .modal-backdrop {
-  position: fixed; inset: 0; background: rgba(15, 13, 36, 0.55);
+  position: fixed; inset: 0; background: rgba(15,13,36,0.55);
   backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
   display: flex; align-items: center; justify-content: center;
@@ -1364,9 +1179,8 @@ export default {
 .modal {
   background: #fff; border-radius: 22px; padding: 24px;
   max-width: 480px; width: 100%; max-height: 90vh; overflow-y: auto;
-  box-shadow: 0 40px 80px -24px rgba(15, 13, 36, 0.5);
+  box-shadow: 0 40px 80px -24px rgba(15,13,36,0.5);
 }
-.modal-lg { max-width: 560px; }
 .modal-sm { max-width: 400px; }
 .modal-head {
   display: flex; align-items: center; justify-content: space-between;
@@ -1390,25 +1204,7 @@ export default {
   text-align: right; flex: 1; min-width: 0; word-break: break-word;
 }
 .modal-actions { display: flex; gap: 10px; justify-content: flex-end; flex-wrap: wrap; }
-
-.section-title-sm {
-  font-size: 0.72rem; font-weight: 800; color: var(--muted);
-  text-transform: uppercase; letter-spacing: 0.6px;
-  margin: 8px 0 4px;
-}
 .mt-4 { margin-top: 16px; }
-
-.doc-row {
-  display: flex; align-items: flex-start; gap: 10px;
-  padding: 12px 14px; background: #f9fafc; border-radius: 12px;
-  border: 1px solid #f0f0f5;
-}
-.doc-body { flex: 1; min-width: 0; }
-.doc-label { font-size: 0.8rem; font-weight: 700; color: var(--ink); margin-bottom: 2px; }
-.doc-link { font-size: 0.78rem; color: var(--purple); font-weight: 700; text-decoration: none; }
-.doc-link:hover { text-decoration: underline; }
-
-.reject-box { padding: 14px; background: #fdecea; border-radius: 14px; }
 .field-label { display: block; font-size: 0.82rem; font-weight: 700; color: var(--ink); margin-bottom: 8px; }
 .text-input {
   width: 100%; padding: 12px 14px;
@@ -1417,18 +1213,14 @@ export default {
   outline: none; font-family: inherit;
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
-.text-input:focus { border-color: var(--purple); box-shadow: 0 0 0 3px rgba(74, 59, 140, 0.1); }
-.textarea { resize: vertical; min-height: 80px; line-height: 1.5; }
+.text-input:focus { border-color: var(--purple); box-shadow: 0 0 0 3px rgba(74,59,140,0.1); }
 .hint { font-size: 0.78rem; color: #95a5a6; margin: 6px 0 0; }
-
 .error-box {
   padding: 12px 14px; border-radius: 12px;
   background: #fdecea; color: #c0392b;
   font-size: 0.83rem; font-weight: 500;
 }
 .confirm-text { font-size: 0.9rem; color: var(--ink); line-height: 1.55; margin: 0; }
-
-/* ============ TOASTS ============ */
 .toast-wrap {
   position: fixed; bottom: 24px; right: 24px; z-index: 200;
   display: flex; flex-direction: column; gap: 10px; align-items: flex-end;
@@ -1438,31 +1230,24 @@ export default {
   display: inline-flex; align-items: center; gap: 4px;
   padding: 12px 18px; border-radius: 12px;
   font-size: 0.85rem; font-weight: 700; color: #fff;
-  box-shadow: 0 20px 40px -16px rgba(15, 13, 36, 0.5);
+  box-shadow: 0 20px 40px -16px rgba(15,13,36,0.5);
   max-width: 340px;
 }
 .toast-success { background: linear-gradient(135deg, #229954, #2ecc71); }
 .toast-warn    { background: linear-gradient(135deg, #b7791f, #f39c12); }
 .toast-error   { background: linear-gradient(135deg, #c0392b, #e74c3c); }
-
-/* ============ TRANSITIONS ============ */
 .fade-slide-enter-active, .fade-slide-leave-active { transition: opacity 0.2s ease, transform 0.2s ease; }
 .fade-slide-enter { opacity: 0; transform: translateY(8px); }
 .fade-slide-leave-to { opacity: 0; transform: translateY(-4px); }
-
 .menu-enter-active, .menu-leave-active { transition: opacity 0.15s ease, transform 0.15s ease; }
 .menu-enter { opacity: 0; transform: translateY(-6px) scale(0.98); }
 .menu-leave-to { opacity: 0; transform: translateY(-4px) scale(0.98); }
-
 .modal-enter-active, .modal-leave-active { transition: opacity 0.2s ease; }
 .modal-enter-active .modal, .modal-leave-active .modal { transition: transform 0.25s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.2s ease; }
 .modal-enter, .modal-leave-to { opacity: 0; }
 .modal-enter .modal, .modal-leave-to .modal { transform: translateY(20px) scale(0.97); opacity: 0; }
-
 .toast-enter-active, .toast-leave-active { transition: all 0.25s cubic-bezier(0.2, 0.8, 0.2, 1); }
 .toast-enter, .toast-leave-to { opacity: 0; transform: translateX(20px); }
-
-/* ============ MOBILE ============ */
 @media (max-width: 599px) {
   .main { padding: 20px 14px; }
   .greeting h1 { font-size: 1.4rem; }

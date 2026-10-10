@@ -188,9 +188,35 @@
             </div>
           </div>
 
+          <!-- Paid note uses payment_receipt (matches backend getOne) -->
           <div v-if="isPaid" class="paid-note">
             <v-icon small color="#229954" class="mr-2">mdi-check-circle</v-icon>
-            <span>Paid · Ref <span class="mono">{{ booking.payment_ref || '—' }}</span></span>
+            <span>
+              Paid
+              <template v-if="paymentReceipt">
+                · Ref <span class="mono">{{ paymentReceipt }}</span>
+              </template>
+            </span>
+          </div>
+
+          <!-- Paid but still awaiting professional confirmation -->
+          <div v-if="isPaid && booking.status === 'pending'" class="state-chip amber mt-3">
+            <v-icon small color="#b7791f">mdi-clock-alert-outline</v-icon>
+            <span>Awaiting professional confirmation</span>
+          </div>
+
+          <!-- Failed payment state -->
+          <div
+            v-if="!isPaid && booking.payment_status === 'failed'"
+            class="error-box mt-3"
+          >
+            <v-icon small color="#e74c3c" class="mr-2">mdi-alert-circle-outline</v-icon>
+            <span>
+              Last payment attempt failed
+              <template v-if="booking.payment_failure_reason">
+                — {{ booking.payment_failure_reason }}
+              </template>
+            </span>
           </div>
 
           <div v-if="paymentError" class="error-box mt-3">
@@ -206,7 +232,7 @@
           >
             <span class="mpesa-left">
               <v-icon small color="white" class="mr-2">mdi-cellphone-wireless</v-icon>
-              Pay with M-Pesa
+              {{ booking.payment_status === 'failed' ? 'Retry M-Pesa payment' : 'Pay with M-Pesa' }}
             </span>
             <v-icon small color="white">mdi-chevron-right</v-icon>
           </button>
@@ -371,7 +397,11 @@
           </div>
 
           <div class="modal-footer">
-            <button class="btn-secondary" :disabled="payModal.paying" @click="closePayModal">
+            <button
+              class="btn-secondary"
+              :disabled="payModal.paying || payModal.stage === 'checking'"
+              @click="closePayModal"
+            >
               {{ payModal.stage === 'waiting' || payModal.stage === 'checking' ? 'Cancel' : 'Close' }}
             </button>
             <button
@@ -423,7 +453,8 @@
           </div>
           <h3 class="confirm-title">Payment received</h3>
           <p class="confirm-text">
-            Your booking is confirmed. You'll see it in your upcoming sessions.
+            Your payment went through. The professional will confirm your
+            session shortly — you'll see the update here.
           </p>
           <div class="modal-footer">
             <button class="btn-primary" @click="closePaySuccess">Done</button>
@@ -499,7 +530,14 @@ export default {
       return Number(this.booking.service_price || this.booking.payment_amount || 0);
     },
     isPaid() {
+      // Backend returns both `is_paid` (boolean) and `payment_status` (string).
+      // Trust is_paid when present, fall back to the status string.
+      if (this.booking?.is_paid === true) return true;
       return this.booking?.payment_status === 'paid';
+    },
+    paymentReceipt() {
+      // Backend field is `payment_receipt` (aliased from payments.mpesa_receipt).
+      return this.booking?.payment_receipt || null;
     },
     canPay() {
       if (!this.booking) return false;
@@ -687,6 +725,7 @@ export default {
 
     closePayModal() {
       if (this.payModal.paying) return;
+      if (this.payModal.stage === 'checking') return;
       this.clearTimers();
       this.payModal.open = false;
     },
@@ -759,6 +798,8 @@ export default {
     },
 
     checkPaymentNow() {
+      // Guard against double-tap firing two overlapping requests
+      if (this.payModal.stage === 'checking') return;
       // Called by "Check now" / "Check again" — cancel the pending timer
       this.clearTimers();
       this.checkPayment();
@@ -843,7 +884,14 @@ export default {
         this.toast(`Booking ${verb}`);
         await this.load();
       } catch (err) {
-        this.toast(err.response?.data?.error || 'Could not update.', 'error', 'mdi-alert-circle-outline');
+        const body = err.response?.data;
+        const msg =
+          body?.error === 'payment_required'
+            ? 'Cannot confirm — payment has not been completed yet.'
+            : body?.error === 'invalid_transition'
+              ? `Cannot move booking from ${body.from} to ${body.to}.`
+              : body?.error || 'Could not update.';
+        this.toast(msg, 'error', 'mdi-alert-circle-outline');
       } finally {
         this.acting = false;
       }
@@ -1177,6 +1225,7 @@ export default {
 }
 .state-chip.green { background: #e6f9ee; color: #229954; }
 .state-chip.red   { background: #fdecea; color: #c0392b; }
+.state-chip.amber { background: #fef3e0; color: #b7791f; }
 
 /* MPESA BUTTON */
 .mpesa-btn {
