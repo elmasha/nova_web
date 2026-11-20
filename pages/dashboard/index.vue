@@ -40,12 +40,13 @@
 
       <!-- ROLE CARDS -->
       <div class="role-cards" role="radiogroup" aria-label="Choose dashboard">
+        
         <!-- PARENT -->
         <button
           class="role-card"
-          :class="{
-            active: chosenRole === 'parent',
-            current: user && user.role === 'parent'
+          :class="{ 
+            active: chosenRole === 'parent', 
+            current: user && user.role === 'parent' 
           }"
           role="radio"
           :aria-checked="chosenRole === 'parent'"
@@ -77,9 +78,9 @@
         <!-- PROFESSIONAL -->
         <button
           class="role-card"
-          :class="{
-            active: chosenRole === 'professional',
-            current: user && user.role === 'professional'
+          :class="{ 
+            active: chosenRole === 'professional', 
+            current: user && user.role === 'professional' 
           }"
           role="radio"
           :aria-checked="chosenRole === 'professional'"
@@ -108,22 +109,47 @@
           </div>
         </button>
 
-        <!--
-          Admin card intentionally removed.
-          Admins are auto-redirected to /dashboard/admin in load()
-          and cannot be created through register-first.
-        -->
+        <!-- ADMIN -->
+        <button
+          v-if="user && (user.role === 'admin' || user.role === 'org_admin')"
+          class="role-card"
+          :class="{ 
+            active: chosenRole === 'admin' || chosenRole === 'org_admin', 
+            current: user.role === 'admin' || user.role === 'org_admin' 
+          }"
+          role="radio"
+          :aria-checked="chosenRole === 'admin' || chosenRole === 'org_admin'"
+          :disabled="saving"
+          @click="selectRole(user.role)"
+          @keydown.enter.prevent="selectRole(user.role)"
+          @keydown.space.prevent="selectRole(user.role)"
+        >
+          <div class="role-icon gradient-pink">
+            <v-icon small color="white">mdi-shield-account-outline</v-icon>
+          </div>
+          <div class="role-text">
+            <div class="role-title">
+              Admin dashboard
+              <span v-if="user.role === 'admin' || user.role === 'org_admin'" class="current-chip">Current</span>
+            </div>
+            <div class="role-sub">Manage users, professionals, and platform settings.</div>
+            <div class="role-bullets">
+              <span class="bullet"><v-icon x-small color="#e86a8a">mdi-check</v-icon>Approve pros</span>
+              <span class="bullet"><v-icon x-small color="#e86a8a">mdi-check</v-icon>View analytics</span>
+              <span class="bullet"><v-icon x-small color="#e86a8a">mdi-check</v-icon>Manage platform</span>
+            </div>
+          </div>
+          <div class="role-check" :class="{ on: chosenRole === 'admin' || chosenRole === 'org_admin' }">
+            <v-icon x-small color="white">mdi-check</v-icon>
+          </div>
+        </button>
       </div>
 
       <!-- ERROR -->
       <div v-if="error" class="error-box">{{ error }}</div>
 
       <!-- PROCEED -->
-      <button
-        class="primary-btn"
-        :disabled="!chosenRole || saving"
-        @click="continueTo"
-      >
+      <button class="primary-btn" :disabled="!chosenRole || saving" @click="continueTo">
         <span v-if="saving" class="loading-row">
           <v-progress-circular indeterminate size="16" width="2" color="white" />
           <span class="ml-2">Setting up…</span>
@@ -142,7 +168,7 @@
 <script>
 import axios from 'axios';
 
-const API = process.env.API_BASE_URL || 'https://novaserver-production-b5fd.up.railway.app';
+const API = process.env.API_BASE_URL || 'https://novaserver-production-19a67434.up.railway.app';
 
 const ROLE_ROUTES = {
   parent:       '/dashboard/parent',
@@ -198,6 +224,8 @@ export default {
     },
     isCurrentSelection() {
       if (!this.user || !this.chosenRole) return false;
+      if (this.user.role === 'org_admin' && this.chosenRole === 'admin') return true;
+      if (this.user.role === 'admin' && this.chosenRole === 'org_admin') return true;
       return this.user.role === this.chosenRole;
     },
     ctaLabel() {
@@ -274,9 +302,10 @@ export default {
           return this.$router.replace('/login');
         }
 
+        // Fetch user from MySQL
         const { data } = await axios.get(`${API}/api/users/me`, { headers });
 
-        // ── No DB row yet ──
+        // ── No DB row yet (needs_role) ──
         if (data.needs_role) {
           this.user = null;
           const last = this.readLastRole();
@@ -292,8 +321,7 @@ export default {
         if (this.user.role === 'admin') {
           this.writeLastRole('admin');
           this._redirected = true;
-          const target = this.safeNext('/dashboard/admin');
-          this.$router.replace(target).catch(() => {});
+          this.$router.replace(this.safeNext('/dashboard/admin')).catch(() => {});
           return;
         }
 
@@ -305,8 +333,10 @@ export default {
           return;
         }
 
+        // Set the chosenRole to their current DB role so the UI highlights it
         this.chosenRole = this.user.role;
         this.stage = 'ready';
+        
       } catch (err) {
         const status = err.response?.status;
         const code = err.response?.data?.error;
@@ -337,13 +367,13 @@ export default {
 
       this.writeLastRole(this.chosenRole);
 
-      // Existing user with same role → just navigate
-      if (this.user && this.user.role === this.chosenRole) {
+      // Existing user with same role → just navigate (No API call needed)
+      if (this.isCurrentSelection) {
         this.goTo(this.chosenRole);
         return;
       }
 
-      // New user OR role change → commit through register-first
+      // Role change → commit through register-first
       this.saving = true;
       this.error = '';
 
@@ -416,7 +446,16 @@ export default {
   }
 };
 </script>
+
 <style scoped>
+/* ============================================================
+   DESIGN TOKENS (Handimap Inspired)
+   Purple: #4a3b8c
+   Teal: #0288a5
+   Pink: #e86a8a
+   Background: #f5f7fb
+   ============================================================ */
+
 .redirect-page {
   min-height: 100vh;
   background:

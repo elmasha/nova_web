@@ -34,7 +34,7 @@ export default {
 ],
 
 axios: {
-    baseURL: process.env.API_BASE_URL || 'https://novaserver-production-b5fd.up.railway.app',
+    baseURL: process.env.API_BASE_URL || 'https://novaserver-production-19a67434.up.railway.app',
     credentials: true
   },
 

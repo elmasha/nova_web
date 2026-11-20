@@ -228,7 +228,7 @@
 <script>
 import axios from 'axios';
 
-const API = process.env.API_BASE_URL || 'https://novaserver-production-b5fd.up.railway.app';
+const API = process.env.API_BASE_URL || 'https://novaserver-production-19a67434.up.railway.app';
 
 export default {
   name: 'ProfessionalsListPage',

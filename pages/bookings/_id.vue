@@ -188,18 +188,17 @@
             </div>
           </div>
 
-          <!-- Paid note uses payment_receipt (matches backend getOne) -->
+          <!-- Paid note uses payment_receipt -->
           <div v-if="isPaid" class="paid-note">
             <v-icon small color="#229954" class="mr-2">mdi-check-circle</v-icon>
             <span>
               Paid
               <template v-if="paymentReceipt">
-                · Ref <span class="mono">{{ paymentReceipt }}</span>
+                · Receipt <span class="mono">{{ paymentReceipt }}</span>
               </template>
             </span>
           </div>
 
-          <!-- Paid but still awaiting professional confirmation -->
           <div v-if="isPaid && booking.status === 'pending'" class="state-chip amber mt-3">
             <v-icon small color="#b7791f">mdi-clock-alert-outline</v-icon>
             <span>Awaiting professional confirmation</span>
@@ -484,7 +483,7 @@
 <script>
 import axios from 'axios';
 
-const API = process.env.API_BASE_URL || 'https://novaserver-production-b5fd.up.railway.app';
+const API = process.env.API_BASE_URL || 'https://novaserver-production-19a67434.up.railway.app';
 
 const CONFIRM_DELAY_SECONDS = 25;
 
@@ -508,7 +507,7 @@ export default {
         phone: '',
         paying: false,
         error: '',
-        stage: 'idle', // 'idle' | 'waiting' | 'checking' | 'still_pending'
+        stage: 'idle',
         paymentId: null,
         checkoutId: null,
         secondsLeft: CONFIRM_DELAY_SECONDS
@@ -516,6 +515,7 @@ export default {
 
       confirmTimer: null,
       tickTimer: null,
+      fastPollTimer: null,
       paySuccess: false,
       confirmCancel: false,
       paymentError: '',
@@ -530,13 +530,10 @@ export default {
       return Number(this.booking.service_price || this.booking.payment_amount || 0);
     },
     isPaid() {
-      // Backend returns both `is_paid` (boolean) and `payment_status` (string).
-      // Trust is_paid when present, fall back to the status string.
       if (this.booking?.is_paid === true) return true;
       return this.booking?.payment_status === 'paid';
     },
     paymentReceipt() {
-      // Backend field is `payment_receipt` (aliased from payments.mpesa_receipt).
       return this.booking?.payment_receipt || null;
     },
     canPay() {
@@ -574,10 +571,9 @@ export default {
       if (this.booking?.status === 'cancelled') return 'gradient-red';
       return 'gradient-purple';
     },
-    /* Countdown ring math */
     ringDash() {
       const r = 16;
-      return 2 * Math.PI * r; // ~100.53
+      return 2 * Math.PI * r;
     },
     ringOffset() {
       const total = CONFIRM_DELAY_SECONDS;
@@ -739,6 +735,10 @@ export default {
         clearInterval(this.tickTimer);
         this.tickTimer = null;
       }
+      if (this.fastPollTimer) {
+        clearInterval(this.fastPollTimer);
+        this.fastPollTimer = null;
+      }
     },
 
     async submitPay() {
@@ -748,6 +748,7 @@ export default {
 
       try {
         const headers = await this.authHeader();
+        
         const { data } = await axios.post(
           `${API}/api/payments/mpesa/stk`,
           {
@@ -758,10 +759,35 @@ export default {
         );
 
         this.payModal.paymentId = data.payment_id;
-        this.payModal.checkoutId = data.checkout_request_id;
+        this.payModal.checkoutId = data.invoice_id;
         this.payModal.paying = false;
 
+        // Start the visible 25s countdown UI
         this.startWait();
+
+        // SILENT BACKGROUND CHECK (Polls every 3 seconds for faster success UI)
+        let checks = 0;
+        this.fastPollTimer = setInterval(async () => {
+          checks++;
+          if (checks > 8 || !this.payModal.open) {
+            clearInterval(this.fastPollTimer);
+            return;
+          }
+          
+          try {
+            const res = await axios.get(`${API}/api/payments/${this.payModal.paymentId}/status`, { headers });
+            if (res.data?.data?.status === 'paid') {
+              clearInterval(this.fastPollTimer);
+              this.clearTimers(); 
+              this.payModal.open = false;
+              this.paySuccess = true;
+              await this.load(); 
+            }
+          } catch (e) {
+            // Ignore network errors during polling
+          }
+        }, 3000);
+
       } catch (err) {
         const body = err.response?.data;
         this.payModal.error =
@@ -773,13 +799,14 @@ export default {
       }
     },
 
-    /* 25s wait → single status query */
     startWait() {
-      this.clearTimers();
+      // Clear just the main timers, not the fastPollTimer we just started
+      if (this.confirmTimer) clearTimeout(this.confirmTimer);
+      if (this.tickTimer) clearInterval(this.tickTimer);
+
       this.payModal.stage = 'waiting';
       this.payModal.secondsLeft = CONFIRM_DELAY_SECONDS;
 
-      // Tick once per second to update the ring + countdown text
       this.tickTimer = setInterval(() => {
         if (this.payModal.secondsLeft > 0) {
           this.payModal.secondsLeft -= 1;
@@ -790,18 +817,18 @@ export default {
         }
       }, 1000);
 
-      // The single deferred check
       this.confirmTimer = setTimeout(() => {
         this.confirmTimer = null;
-        this.checkPayment();
+        // Only run the manual check if the modal is still waiting
+        if (this.payModal.open && this.payModal.stage === 'waiting') {
+          this.checkPayment();
+        }
       }, CONFIRM_DELAY_SECONDS * 1000);
     },
 
     checkPaymentNow() {
-      // Guard against double-tap firing two overlapping requests
       if (this.payModal.stage === 'checking') return;
-      // Called by "Check now" / "Check again" — cancel the pending timer
-      this.clearTimers();
+      this.clearTimers(); // Stops both the countdown and fast poll
       this.checkPayment();
     },
 
@@ -833,7 +860,6 @@ export default {
           return;
         }
 
-        // Still pending
         this.payModal.stage = 'still_pending';
       } catch (err) {
         const code = err.response?.status;

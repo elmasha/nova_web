@@ -451,7 +451,7 @@
 <script>
 import axios from 'axios';
 
-const API = process.env.API_BASE_URL || 'https://novaserver-production-b5fd.up.railway.app';
+const API = process.env.API_BASE_URL || 'https://novaserver-production-19a67434.up.railway.app';
 const DRAFT_KEY = 'nova:assessmentDraft:v1';
 const DRAFT_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 

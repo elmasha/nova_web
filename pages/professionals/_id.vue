@@ -283,7 +283,7 @@
 <script>
 import axios from 'axios';
 
-const API = process.env.API_BASE_URL || 'https://novaserver-production-b5fd.up.railway.app';
+const API = process.env.API_BASE_URL || 'https://novaserver-production-19a67434.up.railway.app';
 
 export default {
   name: 'ProfessionalDetailPage',
@@ -412,13 +412,21 @@ export default {
       try {
         const headers = await this.authHeader();
 
+        // The backend `getPublic` endpoint already returns the professional AND their services.
         const [proRes, childrenRes] = await Promise.all([
           axios.get(`${API}/api/professionals/${this.proId}`, { headers }),
           axios.get(`${API}/api/children`, { headers }).catch(() => ({ data: { data: [] } }))
         ]);
 
         this.pro = proRes.data?.data || null;
-        this.services = this.pro?.services || [];
+        
+        // CRITICAL FIX: Map the services directly from the professional response
+        if (this.pro && Array.isArray(this.pro.services)) {
+          this.services = this.pro.services;
+        } else {
+          this.services = [];
+        }
+        
         this.children = childrenRes.data?.data || [];
 
         if (this.children.length === 1) {
@@ -509,7 +517,6 @@ export default {
       }
     },
 
-    // Helpers
     formatPrice(n) {
       return Number(n).toLocaleString('en-US');
     },
