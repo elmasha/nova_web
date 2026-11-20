@@ -218,13 +218,50 @@
             </span>
           </div>
 
-          <div v-if="paymentError" class="error-box mt-3">
+          <!-- ✅ Pending payments list (auto-shown after timer) -->
+          <div v-if="!isPaid && pendingPayments.length > 0" class="pending-payments-list mt-3">
+            <div class="pending-payments-header">
+              <v-icon small color="#b7791f">mdi-clock-outline</v-icon>
+              <span>Pending payments ({{ pendingPayments.length }})</span>
+            </div>
+            <div
+              v-for="pp in pendingPayments"
+              :key="pp.id"
+              class="pending-payment-item"
+            >
+              <div class="pp-info">
+                <div class="pp-amount">KSh {{ formatPrice(pp.amount) }}</div>
+                <div class="pp-meta">
+                  <span v-if="pp.invoice_id" class="pp-ref">Ref: {{ pp.invoice_id }}</span>
+                  <span v-else class="pp-ref">No invoice ID</span>
+                  <span class="pp-time">{{ timeAgo(pp.created_at) }}</span>
+                </div>
+              </div>
+              <button
+                class="pp-check-btn"
+                :disabled="checkingPaymentId === pp.id"
+                @click="checkPaymentStatus(pp.id)"
+              >
+                <v-icon x-small color="white">
+                  {{ checkingPaymentId === pp.id ? 'mdi-loading' : 'mdi-refresh' }}
+                </v-icon>
+                {{ checkingPaymentId === pp.id ? 'Checking…' : 'Check' }}
+              </button>
+            </div>
+            <div v-if="paymentError" class="error-box mt-2">
+              <v-icon small color="#e74c3c" class="mr-2">mdi-alert-circle-outline</v-icon>
+              <span>{{ paymentError }}</span>
+            </div>
+          </div>
+
+          <div v-if="paymentError && pendingPayments.length === 0" class="error-box mt-3">
             <v-icon small color="#e74c3c" class="mr-2">mdi-alert-circle-outline</v-icon>
             <span>{{ paymentError }}</span>
           </div>
 
+          <!-- ✅ Pay button hidden while there are pending payments -->
           <button
-            v-if="canPay"
+            v-if="canPay && pendingPayments.length === 0"
             class="mpesa-btn mt-4"
             :disabled="paying"
             @click="openPayModal"
@@ -340,7 +377,7 @@
               </p>
             </template>
 
-            <!-- WAITING: 25s countdown -->
+            <!-- WAITING: 45s countdown -->
             <div v-if="payModal.stage === 'waiting'" class="waiting-box mt-4">
               <div class="waiting-ring">
                 <svg viewBox="0 0 36 36" class="ring-svg">
@@ -356,7 +393,8 @@
               <div class="waiting-copy">
                 <div class="waiting-title">Confirming payment…</div>
                 <div class="waiting-text">
-                  Enter your M-Pesa PIN on your phone. We'll check in {{ payModal.secondsLeft }}s.
+                  Enter your M-Pesa PIN on your phone. We'll confirm automatically —
+                  or tap "Check now" if you've already paid.
                 </div>
                 <button class="link-btn mt-2" @click="checkPaymentNow">
                   Check now
@@ -375,7 +413,7 @@
               </div>
             </div>
 
-            <!-- STILL PENDING after 25s -->
+            <!-- STILL PENDING after the wait -->
             <div v-if="payModal.stage === 'still_pending'" class="still-pending-box mt-4">
               <div class="still-icon">
                 <v-icon small color="#b7791f">mdi-clock-alert-outline</v-icon>
@@ -485,7 +523,9 @@ import axios from 'axios';
 
 const API = process.env.API_BASE_URL || 'https://novaserver-production-19a67434.up.railway.app';
 
-const CONFIRM_DELAY_SECONDS = 25;
+const CONFIRM_DELAY_SECONDS = 45;
+const FAST_POLL_INTERVAL_MS = 3000;
+const FAST_POLL_MAX_CHECKS = 15;
 
 export default {
   name: 'BookingDetailPage',
@@ -501,6 +541,9 @@ export default {
       booking: null,
       role: 'parent',
       user: null,
+
+      pendingPayments: [],
+      checkingPaymentId: null,
 
       payModal: {
         open: false,
@@ -525,6 +568,10 @@ export default {
   },
 
   computed: {
+    // ✅ FIX: template uses :disabled="paying" on the M-Pesa button
+    paying() {
+      return this.payModal.paying;
+    },
     amountDue() {
       if (!this.booking) return 0;
       return Number(this.booking.service_price || this.booking.payment_amount || 0);
@@ -688,6 +735,8 @@ export default {
         });
         this.booking = data.data || null;
 
+        await this.loadPendingPayments(headers);
+
         if (this.role === 'parent' && this.user?.phone && !this.payModal.phone) {
           this.payModal.phone = this.user.phone;
         }
@@ -699,9 +748,68 @@ export default {
           this.loadError = 'Your session expired. Please sign in again.';
           setTimeout(() => this.$router.push('/login'), 1500);
         } else this.loadError = 'Could not load booking.';
+        // ✅ FIX: reset pending list on error so the UI is consistent
+        this.pendingPayments = [];
         console.error('[booking detail]', status, err.response?.data);
       } finally {
         this.loading = false;
+      }
+    },
+
+    // ✅ FIX: defensive parsing — accepts { data: [...] }, [...], or { payments: [...] }
+    async loadPendingPayments(headers) {
+      try {
+        const h = headers || await this.authHeader();
+        if (!h.Authorization) return;
+        const { data } = await axios.get(
+          `${API}/api/payments/pending?booking_id=${this.$route.params.id}`,
+          { headers: h }
+        );
+
+        const list = Array.isArray(data)
+          ? data
+          : Array.isArray(data?.data)
+            ? data.data
+            : Array.isArray(data?.payments)
+              ? data.payments
+              : [];
+
+        this.pendingPayments = list;
+        // Remove this log once the list renders correctly
+        console.log('[pending payments]', list);
+      } catch (err) {
+        console.warn('[pending payments]', err?.response?.data || err.message);
+        this.pendingPayments = [];
+      }
+    },
+
+    async checkPaymentStatus(paymentId) {
+      if (this.checkingPaymentId) return;
+      this.checkingPaymentId = paymentId;
+      this.paymentError = '';
+
+      try {
+        const headers = await this.authHeader();
+        const { data } = await axios.get(
+          `${API}/api/payments/${paymentId}/status`,
+          { headers }
+        );
+
+        const st = data.data?.status;
+        if (st === 'paid') {
+          this.toast('Payment confirmed!', 'success');
+          await this.load();
+        } else if (st === 'failed') {
+          this.toast(data.data.failure_reason || 'Payment failed.', 'error');
+          await this.load();
+        } else {
+          this.toast('Payment is still pending at M-Pesa.', 'warn');
+        }
+      } catch (err) {
+        this.paymentError = err.response?.data?.message || 'Could not check status.';
+        this.toast(this.paymentError, 'error');
+      } finally {
+        this.checkingPaymentId = null;
       }
     },
 
@@ -724,6 +832,7 @@ export default {
       if (this.payModal.stage === 'checking') return;
       this.clearTimers();
       this.payModal.open = false;
+      this.loadPendingPayments();
     },
 
     clearTimers() {
@@ -748,7 +857,7 @@ export default {
 
       try {
         const headers = await this.authHeader();
-        
+
         const { data } = await axios.post(
           `${API}/api/payments/mpesa/stk`,
           {
@@ -762,32 +871,10 @@ export default {
         this.payModal.checkoutId = data.invoice_id;
         this.payModal.paying = false;
 
-        // Start the visible 25s countdown UI
+        await this.loadPendingPayments(headers);
+
         this.startWait();
-
-        // SILENT BACKGROUND CHECK (Polls every 3 seconds for faster success UI)
-        let checks = 0;
-        this.fastPollTimer = setInterval(async () => {
-          checks++;
-          if (checks > 8 || !this.payModal.open) {
-            clearInterval(this.fastPollTimer);
-            return;
-          }
-          
-          try {
-            const res = await axios.get(`${API}/api/payments/${this.payModal.paymentId}/status`, { headers });
-            if (res.data?.data?.status === 'paid') {
-              clearInterval(this.fastPollTimer);
-              this.clearTimers(); 
-              this.payModal.open = false;
-              this.paySuccess = true;
-              await this.load(); 
-            }
-          } catch (e) {
-            // Ignore network errors during polling
-          }
-        }, 3000);
-
+        this.startFastPoll();
       } catch (err) {
         const body = err.response?.data;
         this.payModal.error =
@@ -799,8 +886,46 @@ export default {
       }
     },
 
+    startFastPoll() {
+      if (this.fastPollTimer) clearInterval(this.fastPollTimer);
+      let checks = 0;
+      this.fastPollTimer = setInterval(async () => {
+        checks++;
+        if (checks > FAST_POLL_MAX_CHECKS || !this.payModal.open) {
+          clearInterval(this.fastPollTimer);
+          this.fastPollTimer = null;
+          this.loadPendingPayments();
+          return;
+        }
+        try {
+          const headers = await this.authHeader();
+          const res = await axios.get(
+            `${API}/api/payments/${this.payModal.paymentId}/status`,
+            { headers }
+          );
+          const st = res.data?.data?.status;
+          if (st === 'paid') {
+            clearInterval(this.fastPollTimer);
+            this.fastPollTimer = null;
+            this.clearTimers();
+            this.payModal.open = false;
+            this.paySuccess = true;
+            await this.load();
+          } else if (st === 'failed') {
+            clearInterval(this.fastPollTimer);
+            this.fastPollTimer = null;
+            this.payModal.stage = 'idle';
+            this.payModal.error =
+              res.data.data.failure_reason || 'Payment was not completed. Try again.';
+            await this.loadPendingPayments(headers);
+          }
+        } catch (_) {
+          // Ignore transient network errors; next tick retries
+        }
+      }, FAST_POLL_INTERVAL_MS);
+    },
+
     startWait() {
-      // Clear just the main timers, not the fastPollTimer we just started
       if (this.confirmTimer) clearTimeout(this.confirmTimer);
       if (this.tickTimer) clearInterval(this.tickTimer);
 
@@ -819,16 +944,16 @@ export default {
 
       this.confirmTimer = setTimeout(() => {
         this.confirmTimer = null;
-        // Only run the manual check if the modal is still waiting
         if (this.payModal.open && this.payModal.stage === 'waiting') {
           this.checkPayment();
         }
+        this.loadPendingPayments();
       }, CONFIRM_DELAY_SECONDS * 1000);
     },
 
     checkPaymentNow() {
       if (this.payModal.stage === 'checking') return;
-      this.clearTimers(); // Stops both the countdown and fast poll
+      this.clearTimers();
       this.checkPayment();
     },
 
@@ -857,10 +982,13 @@ export default {
         if (status === 'failed') {
           this.payModal.stage = 'idle';
           this.payModal.error = failureReason || 'Payment was not completed. Try again.';
+          await this.loadPendingPayments(headers);
           return;
         }
 
         this.payModal.stage = 'still_pending';
+        this.startFastPoll();
+        await this.loadPendingPayments(headers);
       } catch (err) {
         const code = err.response?.status;
         if (code === 404) {
@@ -868,6 +996,7 @@ export default {
           this.payModal.error = 'Payment record not found. Try again.';
         } else {
           this.payModal.stage = 'still_pending';
+          this.startFastPoll();
         }
       }
     },
@@ -973,6 +1102,17 @@ export default {
         other: 'Other'
       };
       return m[t] || t || '';
+    },
+    timeAgo(dateStr) {
+      if (!dateStr) return '';
+      const seconds = Math.floor((Date.now() - new Date(dateStr).getTime()) / 1000);
+      if (seconds < 60) return 'just now';
+      const minutes = Math.floor(seconds / 60);
+      if (minutes < 60) return `${minutes} min ago`;
+      const hours = Math.floor(minutes / 60);
+      if (hours < 24) return `${hours} hr ago`;
+      const days = Math.floor(hours / 24);
+      return `${days}d ago`;
     }
   }
 };
@@ -1120,13 +1260,8 @@ export default {
 
 /* STEPPER */
 .stepper-card { padding: 22px 18px 24px; }
-.stepper {
-  display: flex; align-items: center; gap: 4px;
-}
-.step {
-  display: flex; flex-direction: column; align-items: center;
-  gap: 8px; flex: 0 0 auto;
-}
+.stepper { display: flex; align-items: center; gap: 4px; }
+.step { display: flex; flex-direction: column; align-items: center; gap: 8px; flex: 0 0 auto; }
 .step-dot {
   width: 30px; height: 30px; border-radius: 50%;
   background: #e5e9f0;
@@ -1151,7 +1286,6 @@ export default {
 .step.done .step-label,
 .step.current .step-label { color: var(--purple); }
 .step.cancelled .step-label { color: #c0392b; }
-
 .step-connector {
   flex: 1; height: 2px; border-radius: 2px;
   background: #e5e9f0; margin: 0 -4px;
@@ -1178,7 +1312,6 @@ export default {
 }
 .detail-row:last-child { border-bottom: none; padding-bottom: 0; }
 .detail-row:first-of-type { padding-top: 4px; }
-
 .detail-icon {
   width: 34px; height: 34px; border-radius: 10px;
   display: grid; place-items: center; flex: 0 0 auto;
@@ -1189,7 +1322,6 @@ export default {
 .gradient-pink   { background: linear-gradient(135deg, #e86a8a, #f48fb1); }
 .gradient-green  { background: linear-gradient(135deg, #229954, #2ecc71); }
 .gradient-red    { background: linear-gradient(135deg, #c0392b, #e74c3c); }
-
 .detail-body { flex: 1; min-width: 0; }
 .detail-label {
   font-size: 0.68rem; font-weight: 800; color: var(--muted);
@@ -1212,7 +1344,6 @@ export default {
 .amount-due       { background: linear-gradient(135deg, #ece7fa, #f5f2fd); border-color: #d5cbf0; }
 .amount-paid      { background: linear-gradient(135deg, #e6f9ee, #f1fcf6); border-color: #a7e3c0; }
 .amount-cancelled { background: linear-gradient(135deg, #fdecea, #fef5f4); border-color: #f5c2bd; }
-
 .amount-body { flex: 1; min-width: 0; }
 .amount-label {
   font-size: 0.68rem; font-weight: 800; color: var(--muted);
@@ -1252,6 +1383,77 @@ export default {
 .state-chip.green { background: #e6f9ee; color: #229954; }
 .state-chip.red   { background: #fdecea; color: #c0392b; }
 .state-chip.amber { background: #fef3e0; color: #b7791f; }
+
+/* Pending payments list */
+.pending-payments-list {
+  background: #fef3e0;
+  border: 1px solid #f5dab7;
+  border-radius: 14px;
+  padding: 14px;
+}
+.pending-payments-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.82rem;
+  font-weight: 800;
+  color: #b7791f;
+  margin-bottom: 10px;
+}
+.pending-payment-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid #f5dab7;
+}
+.pending-payment-item:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+.pp-info { flex: 1; min-width: 0; }
+.pp-amount {
+  font-size: 0.95rem;
+  font-weight: 800;
+  color: var(--ink);
+}
+.pp-meta {
+  display: flex;
+  gap: 10px;
+  font-size: 0.72rem;
+  color: #8a5a12;
+  margin-top: 2px;
+  flex-wrap: wrap;
+}
+.pp-ref {
+  font-family: ui-monospace, monospace;
+  word-break: break-all;
+}
+.pp-time { opacity: 0.75; }
+.pp-check-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 14px;
+  border-radius: 10px;
+  border: none;
+  background: #b7791f;
+  color: #fff;
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+  font-family: inherit;
+  white-space: nowrap;
+  flex: 0 0 auto;
+}
+.pp-check-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.pp-check-btn:not(:disabled):hover {
+  background: #9c6415;
+}
 
 /* MPESA BUTTON */
 .mpesa-btn {
@@ -1421,9 +1623,7 @@ export default {
   font-variant-numeric: tabular-nums;
   line-height: 1;
 }
-.pay-desc {
-  font-size: 0.82rem; color: var(--muted); margin-top: 6px;
-}
+.pay-desc { font-size: 0.82rem; color: var(--muted); margin-top: 6px; }
 
 /* WAITING / CHECKING */
 .waiting-box {
@@ -1436,19 +1636,9 @@ export default {
 .waiting-title { font-size: 0.88rem; font-weight: 800; color: var(--purple); }
 .waiting-text { font-size: 0.78rem; color: var(--purple); opacity: 0.85; margin-top: 3px; line-height: 1.45; }
 
-/* Countdown ring */
-.waiting-ring {
-  position: relative;
-  width: 52px; height: 52px;
-  flex: 0 0 auto;
-}
-.ring-svg {
-  width: 100%; height: 100%;
-  transform: rotate(-90deg);
-}
-.ring-track {
-  fill: none; stroke: #d5cbf0; stroke-width: 3;
-}
+.waiting-ring { position: relative; width: 52px; height: 52px; flex: 0 0 auto; }
+.ring-svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+.ring-track { fill: none; stroke: #d5cbf0; stroke-width: 3; }
 .ring-fill {
   fill: none; stroke: #4a3b8c; stroke-width: 3;
   stroke-linecap: round;
@@ -1557,7 +1747,7 @@ export default {
 .toast-enter-active, .toast-leave-active { transition: all 0.25s cubic-bezier(0.2, 0.8, 0.2, 1); }
 .toast-enter, .toast-leave-to { opacity: 0; transform: translateX(20px); }
 
-/* RESPONSIVE  */
+/* RESPONSIVE */
 @media (max-width: 599px) {
   .main { padding: 16px 12px; }
   .card { padding: 16px; }
@@ -1569,5 +1759,7 @@ export default {
   .modal-sm .modal-footer button { min-width: 0; }
   .toast-wrap { left: 14px; right: 14px; align-items: stretch; }
   .toast { max-width: none; }
+  .pending-payment-item { flex-wrap: wrap; }
+  .pp-check-btn { width: 100%; justify-content: center; }
 }
 </style>
